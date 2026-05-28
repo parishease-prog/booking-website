@@ -3,8 +3,6 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-const { runMigrations } = require('./utils/runMigrations');
-
 const catalogRoutes = require('./routes/catalog.routes');
 const availabilityRoutes = require('./routes/availability.routes');
 const guestRoutes = require('./routes/guest.routes');
@@ -157,14 +155,8 @@ app.get('/__routes', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 if (require.main === module) {
-  // Run migrations before starting the server
-  runMigrations().then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  }).catch(err => {
-    console.error('Failed to start server:', err.message);
-    process.exit(1);
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
 
