@@ -3,6 +3,8 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
+const { initializeDatabase } = require('./utils/initDatabase');
+
 const catalogRoutes = require('./routes/catalog.routes');
 const availabilityRoutes = require('./routes/availability.routes');
 const guestRoutes = require('./routes/guest.routes');
@@ -155,8 +157,18 @@ app.get('/__routes', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  // Initialize database first, then start server
+  initializeDatabase().then(success => {
+    if (success) {
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    } else {
+      console.error('Database initialization failed, but server will attempt to start anyway');
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT} (without database)`);
+      });
+    }
   });
 }
 
