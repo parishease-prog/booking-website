@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import MessageBox from '../components/MessageBox.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import MessageBox from '../components/MessageBox.jsx'
+import DateFilter from '../components/DateFilter.jsx';
+import ReportGenerator from '../components/ReportGenerator.jsx';
 import { apiGet, apiPost } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
 import { formatPeso } from '../utils/format.js';
@@ -8,6 +10,7 @@ function AdminOperationsPage() {
   const token = getAdminToken();
   const [overview, setOverview] = useState(null);
   const [activityLogs, setActivityLogs] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmingId, setConfirmingId] = useState(null);
@@ -35,6 +38,18 @@ function AdminOperationsPage() {
     loadOperations().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  const filteredActivityLogs = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return activityLogs;
+    }
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return activityLogs.filter((log) => {
+      const logDate = new Date(log.created_at);
+      return logDate >= start && logDate < end;
+    });
+  }, [activityLogs, dateRange]);
 
   async function confirmReservation(reservationId) {
     try {
@@ -125,6 +140,8 @@ function AdminOperationsPage() {
             </div>
           </>
         ) : null}
+
+        <ReportGenerator />
       </section>
 
       <aside className="sidebar">
@@ -134,8 +151,10 @@ function AdminOperationsPage() {
             <h2>Recent activity</h2>
           </div>
 
-          <div className={activityLogs.length ? 'room-list' : 'room-list empty-state'}>
-            {activityLogs.length ? activityLogs.map((log) => (
+          <DateFilter onDateRangeChange={setDateRange} />
+
+          <div className={filteredActivityLogs.length ? 'room-list' : 'room-list empty-state'}>
+            {filteredActivityLogs.length ? filteredActivityLogs.map((log) => (
               <article className="room-card" key={log.id}>
                 <header>
                   <div>

@@ -6,6 +6,7 @@ import MessageBox from '../components/MessageBox.jsx';
 import ReservationConfirmation from '../components/ReservationConfirmation.jsx';
 import { apiGet, apiPost } from '../services/api.js';
 import { formatPeso, isoDate } from '../utils/format.js';
+import { validateEmail, validateText, validateOccupancy, sanitizeErrorMessage } from '../utils/validation.js';
 
 const initialForm = {
   first_name: '',
@@ -126,6 +127,41 @@ function ReservePage() {
       return;
     }
 
+    // Validate inputs
+    if (!validateText(form.first_name, 100)) {
+      setMessage({ type: 'error', text: 'First name is required (max 100 characters).' });
+      return;
+    }
+
+    if (!validateText(form.last_name, 100)) {
+      setMessage({ type: 'error', text: 'Last name is required (max 100 characters).' });
+      return;
+    }
+
+    if (!validateEmail(form.email)) {
+      setMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+
+    if (form.special_requests && !validateText(form.special_requests, 500)) {
+      setMessage({ type: 'error', text: 'Special requests must be less than 500 characters.' });
+      return;
+    }
+
+    // Validate occupancy for each selected room
+    for (const room of selectedRooms) {
+      const occupancyError = validateOccupancy(
+        Number(form.adult_count || 0),
+        Number(form.child_count || 0),
+        room.base_capacity,
+        room.max_capacity
+      );
+      if (occupancyError) {
+        setMessage({ type: 'error', text: `Room issue: ${occupancyError}` });
+        return;
+      }
+    }
+
     const payload = {
       ...form,
       adult_count: Number(form.adult_count || 1),
@@ -149,8 +185,14 @@ function ReservePage() {
       const details = await apiGet(`/reservations/code/${encodeURIComponent(created.reservation_code)}`);
       setReservation(details);
       setMessage({ type: 'success', text: `Reservation created. Code: ${created.reservation_code}` });
+      
+      // Redirect to booking success page after a short delay to show the success message
+      setTimeout(() => {
+        navigate(`/booking-success/${encodeURIComponent(created.reservation_code)}`);
+      }, 1500);
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setSubmittingReservation(false);
     }

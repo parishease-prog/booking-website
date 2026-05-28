@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import MessageBox from '../components/MessageBox.jsx';
+import DateFilter from '../components/DateFilter.jsx';
 import { apiGet, apiPost, apiUploadFile } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
 import { formatPeso } from '../utils/format.js';
+import { maskEmail } from '../utils/validation.js';
 
 const initialPaymentForm = {
   payment_method: 'e_wallet',
@@ -26,17 +28,33 @@ function formatDateTime(value) {
   }
 }
 
+function looksLikeImageUrl(value) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+    return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url.pathname);
+  } catch (error) {
+    return /\.(png|jpe?g|gif|webp|bmp|svg)(\\?.*)?$/i.test(String(value));
+  }
+}
+
 function AdminPaymentsPage() {
   const token = getAdminToken();
   const [lookupCode, setLookupCode] = useState('');
   const [reservation, setReservation] = useState(null);
-  const [payments, setPayments] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [paymentForm, setPaymentForm] = useState(initialPaymentForm);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [refundingPaymentId, setRefundingPaymentId] = useState(null);
+  const [approvingPaymentId, setApprovingPaymentId] = useState(null);
+  const [decliningPaymentId, setDecliningPaymentId] = useState(null);
 
   const reservationId = reservation?.id || null;
 
@@ -51,6 +69,22 @@ function AdminPaymentsPage() {
 
     return { total, paid, balance };
   }, [reservation]);
+
+  // Filter payments by date range
+  const payments = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return allPayments;
+    }
+
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+
+    return allPayments.filter((payment) => {
+      if (!payment.created_at) return false;
+      const paymentDate = new Date(payment.created_at);
+      return paymentDate >= start && paymentDate < end;
+    });
+  }, [allPayments, dateRange]);
 
   async function loadReservationByCode(code) {
     const trimmed = String(code || '').trim();
@@ -67,17 +101,35 @@ function AdminPaymentsPage() {
       setReservation(details);
 
       const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(details.id)}`, { token });
-      setPayments(Array.isArray(paymentRows) ? paymentRows : []);
+      setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
       setPaymentForm(initialPaymentForm);
     } catch (error) {
       setReservation(null);
-      setPayments([]);
+      setAllPayments([]);
       setMessage({ type: 'error', text: error.message });
     } finally {
       setLoading(false);
     }
   }
 
+  // Load all payments on initial mount
+  useEffect(() => {
+    async function loadAllPayments() {
+      try {
+        setLoading(true);
+        const paymentRows = await apiGet('/admin/payments', { token });
+        setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
+      } catch (error) {
+        setAllPayments([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadAllPayments().catch(() => {});
+  }, [token]);
+
+  // Refresh payments when a specific reservation is selected
   useEffect(() => {
     if (!reservationId) {
       return;
@@ -86,9 +138,9 @@ function AdminPaymentsPage() {
     async function refreshPayments() {
       try {
         const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(reservationId)}`, { token });
-        setPayments(Array.isArray(paymentRows) ? paymentRows : []);
+        setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
       } catch (error) {
-        setPayments([]);
+        setAllPayments([]);
       }
     }
 
@@ -158,7 +210,7 @@ function AdminPaymentsPage() {
       setReservation(details);
 
       const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(reservationId)}`, { token });
-      setPayments(Array.isArray(paymentRows) ? paymentRows : []);
+      setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
       setPaymentForm(initialPaymentForm);
       setMessage({ type: 'success', text: 'Payment recorded successfully.' });
     } catch (error) {
@@ -184,7 +236,7 @@ function AdminPaymentsPage() {
         setReservation(details);
 
         const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(reservationId)}`, { token });
-        setPayments(Array.isArray(paymentRows) ? paymentRows : []);
+        setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
       }
 
       setMessage({ type: 'success', text: 'Refund recorded successfully.' });
@@ -195,13 +247,125 @@ function AdminPaymentsPage() {
     }
   }
 
+  async function handleApprove(payment) {
+    try {
+      if (!window.confirm('Approve this payment and mark it as paid?')) {
+        return;
+      }
+
+      setApprovingPaymentId(payment.id);
+      setMessage(null);
+
+      await apiPost(`/admin/payments/${payment.id}/approve`, {}, { token });
+
+      if (reservationId) {
+        const details = await apiGet(`/admin/reservations/${encodeURIComponent(reservationId)}`, { token });
+        setReservation(details);
+
+        const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(reservationId)}`, { token });
+        setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
+      }
+
+      setMessage({ type: 'success', text: 'Payment approved successfully.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setApprovingPaymentId(null);
+    }
+  }
+
+  async function handleDecline(payment) {
+    try {
+      if (!window.confirm('Decline this payment? It will be marked as failed.')) {
+        return;
+      }
+
+      setDecliningPaymentId(payment.id);
+      setMessage(null);
+
+      await apiPost(
+        `/admin/payments/${payment.id}/decline`,
+        { notes: `Declined by admin at ${new Date().toISOString()}` },
+        { token }
+      );
+
+      if (reservationId) {
+        const details = await apiGet(`/admin/reservations/${encodeURIComponent(reservationId)}`, { token });
+        setReservation(details);
+
+        const paymentRows = await apiGet(`/admin/payments?reservation_id=${encodeURIComponent(reservationId)}`, { token });
+        setAllPayments(Array.isArray(paymentRows) ? paymentRows : []);
+      }
+
+      setMessage({ type: 'success', text: 'Payment declined successfully.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setDecliningPaymentId(null);
+    }
+  }
+
   return (
     <main className="main-grid">
       <section className="panel">
         <div className="panel-header">
           <p className="eyebrow">Payment Management</p>
           <h1 className="page-title">Payments</h1>
-          <p>Look up a reservation code, review balances, and record payments.</p>
+          <p>All payments are listed below. Search by reservation code or select one to record additional payments.</p>
+        </div>
+
+        <MessageBox message={message} />
+
+        <DateFilter onDateRangeChange={setDateRange} />
+
+        {/* All Payments Table */}
+        {loading ? (
+          <div className="room-meta">Loading payments...</div>
+        ) : payments.length > 0 ? (
+          <div className="payments-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reservation Code</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Method</th>
+                  <th>Paid Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td>{payment.reservation_code || 'N/A'}</td>
+                    <td>{formatPeso(payment.amount)}</td>
+                    <td>
+                      <span className={`badge badge-${payment.payment_status}`}>
+                        {payment.payment_status}
+                      </span>
+                    </td>
+                    <td>{payment.payment_method}</td>
+                    <td>{payment.paid_at ? formatDateTime(payment.paid_at) : '—'}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => loadReservationByCode(payment.reservation_code)}
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="room-list empty-state">No payments found</div>
+        )}
+
+        <div className="panel-divider">
+          <h2>Search or Record Payment</h2>
         </div>
 
         <form
@@ -227,11 +391,9 @@ function AdminPaymentsPage() {
           </div>
         </form>
 
-        <MessageBox message={message} />
-
         {reservation ? (
           <div className="summary-card">
-            <div><strong>Guest:</strong> {reservation.guest_name} ({reservation.guest_email})</div>
+            <div><strong>Guest:</strong> {reservation.guest_name} ({maskEmail(reservation.guest_email)})</div>
             <div><strong>Dates:</strong> {String(reservation.check_in_date).slice(0, 10)} to {String(reservation.check_out_date).slice(0, 10)}</div>
             <div><strong>Status:</strong> {reservation.reservation_status}</div>
             <div><strong>Payment:</strong> {reservation.payment_status}</div>
@@ -335,11 +497,47 @@ function AdminPaymentsPage() {
                   {payment.reference_number ? (
                     <p className="room-meta">Reference: {payment.reference_number}</p>
                   ) : null}
+                  {payment.proof_image_url ? (
+                    <>
+                      <p className="room-meta">
+                        Proof:&nbsp;
+                        <a href={payment.proof_image_url} target="_blank" rel="noreferrer">View file</a>
+                      </p>
+                      {looksLikeImageUrl(payment.proof_image_url) ? (
+                        <img
+                          className="payment-proof-preview"
+                          src={payment.proof_image_url}
+                          alt={`Payment proof #${payment.id}`}
+                          loading="lazy"
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
                   {payment.recorded_by_name ? (
                     <p className="room-meta">Recorded by: {payment.recorded_by_name}</p>
                   ) : null}
                   {payment.notes ? (
                     <p className="room-meta">{payment.notes}</p>
+                  ) : null}
+                  {payment.payment_status === 'pending' ? (
+                    <div className="action-row">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={approvingPaymentId === payment.id}
+                        onClick={() => handleApprove(payment)}
+                      >
+                        {approvingPaymentId === payment.id ? 'Approving...' : 'Approve'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={decliningPaymentId === payment.id}
+                        onClick={() => handleDecline(payment)}
+                      >
+                        {decliningPaymentId === payment.id ? 'Declining...' : 'Decline'}
+                      </button>
+                    </div>
                   ) : null}
                   {['paid', 'partial'].includes(payment.payment_status) ? (
                     <div className="action-row">
@@ -366,4 +564,3 @@ function AdminPaymentsPage() {
 }
 
 export default AdminPaymentsPage;
-

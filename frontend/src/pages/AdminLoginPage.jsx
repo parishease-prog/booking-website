@@ -7,7 +7,7 @@ import { setAdminSession } from '../utils/adminSession.js';
 function AdminLoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [form, setForm] = useState({ email: 'admin@resort.com', password: 'admin123' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [message, setMessage] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 

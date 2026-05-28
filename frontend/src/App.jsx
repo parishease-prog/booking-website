@@ -11,7 +11,6 @@ import AdminPaymentsPage from './pages/AdminPaymentsPage.jsx';
 import AdminOperationsPage from './pages/AdminOperationsPage.jsx';
 import AdminRefundRequestsPage from './pages/AdminRefundRequestsPage.jsx';
 import AdminReservationsPage from './pages/AdminReservationsPage.jsx';
-import AdminRoomTransfersPage from './pages/AdminRoomTransfersPage.jsx';
 import AdminRoomsPage from './pages/AdminRoomsPage.jsx';
 import AdminSlidesPage from './pages/AdminSlidesPage.jsx';
 import AdminStayExtensionsPage from './pages/AdminStayExtensionsPage.jsx';
@@ -19,6 +18,7 @@ import BookingReceiptPage from './pages/BookingReceiptPage.jsx';
 import BookingSuccessPage from './pages/BookingSuccessPage.jsx';
 import ContactPage from './pages/ContactPage.jsx';
 import HomePage from './pages/HomePage.jsx';
+import InquiryLookupPage from './pages/InquiryLookupPage.jsx';
 import MyBookingsPage from './pages/MyBookingsPage.jsx';
 import PaymentPage from './pages/PaymentPage.jsx';
 import RequestsPage from './pages/RequestsPage.jsx';
@@ -39,7 +39,6 @@ function App() {
           <Route path="/admin/cancellation-requests" element={<AdminCancellationRequestsPage />} />
           <Route path="/admin/refund-requests" element={<AdminRefundRequestsPage />} />
           <Route path="/admin/stay-extensions" element={<AdminStayExtensionsPage />} />
-          <Route path="/admin/room-transfers" element={<AdminRoomTransfersPage />} />
           <Route path="/admin/operations" element={<AdminOperationsPage />} />
           <Route path="/admin/rooms" element={<AdminRoomsPage />} />
           <Route path="/admin/amenities" element={<AdminAmenitiesPage />} />
@@ -60,6 +59,7 @@ function App() {
         <Route path="/my-bookings/:code/receipt" element={<BookingReceiptPage />} />
         <Route path="/requests" element={<RequestsPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/inquiry-lookup" element={<InquiryLookupPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

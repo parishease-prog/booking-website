@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import MessageBox from '../components/MessageBox.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import MessageBox from '../components/MessageBox.jsx'
+import DateFilter from '../components/DateFilter.jsx';
 import { apiDelete, apiGet, apiPatch } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
 
 const statusOptions = [
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' }
+  { value: 'denied', label: 'Denied' },
+  { value: 'completed', label: 'Completed' }
 ];
 
 function formatDate(value) {
@@ -30,6 +32,7 @@ function formatDateTime(value) {
 function AdminStayExtensionsPage() {
   const token = getAdminToken();
   const [requests, setRequests] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,9 +59,21 @@ function AdminStayExtensionsPage() {
     loadRequests();
   }, [statusFilter, token]);
 
+  const filteredRequests = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return requests;
+    }
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return requests.filter((request) => {
+      const requestDate = new Date(request.requested_at);
+      return requestDate >= start && requestDate < end;
+    });
+  }, [requests, dateRange]);
+
   async function handleSelectRequest(request) {
     setSelectedRequest(request);
-    setResponseNotes(request.response_notes || '');
+    setResponseNotes(request.notes || '');
   }
 
   async function handleUpdateStatus(newStatus) {
@@ -70,7 +85,7 @@ function AdminStayExtensionsPage() {
         `/requests/stay-extensions/${selectedRequest.id}`,
         {
           status: newStatus,
-          response_notes: responseNotes || null
+          response_notes: responseNotes || null  // Backend accepts response_notes but stores as notes
         },
         { token }
       );
@@ -130,8 +145,10 @@ function AdminStayExtensionsPage() {
           </label>
         </div>
 
-        <div className={requests.length ? 'room-list' : 'room-list empty-state'}>
-          {loading ? 'Loading requests...' : requests.length ? requests.map((request) => (
+        <DateFilter onDateRangeChange={setDateRange} />
+
+        <div className={filteredRequests.length ? 'room-list' : 'room-list empty-state'}>
+          {loading ? 'Loading requests...' : filteredRequests.length ? filteredRequests.map((request) => (
             <article
               className={`room-card${selectedRequest?.id === request.id ? ' selected' : ''}`}
               key={request.id}
@@ -181,13 +198,13 @@ function AdminStayExtensionsPage() {
               {selectedRequest.reason}
             </p>
 
-            {selectedRequest.response_notes && (
+            {selectedRequest.notes && (
               <>
                 <div className="panel-header">
                   <h3>Response Notes</h3>
                 </div>
                 <p className="room-meta" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {selectedRequest.response_notes}
+                  {selectedRequest.notes}
                 </p>
               </>
             )}

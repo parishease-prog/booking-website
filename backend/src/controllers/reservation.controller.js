@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const {
   validateDateRange,
+  validateOccupancy,
   generateReservationCode,
   generateConfirmationCode,
   generateHoldToken,
@@ -11,6 +12,8 @@ const {
   fetchReservationDetails
 } = require('../utils/booking');
 const { logActivity } = require('../utils/activity');
+const { validatePhone, validateEmail } = require('../utils/validation');
+const { validateEnum } = require('../utils/enums');
 
 const CANCELLATION_MIN_HOURS = Number(process.env.CANCELLATION_MIN_HOURS || 24);
 const BOOKING_HOLD_MINUTES = Number(process.env.BOOKING_HOLD_MINUTES || 15);
@@ -129,6 +132,16 @@ async function createReservation(req, res) {
       });
     }
 
+    // Validate email format
+    if (!validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Validate phone format if provided
+    if (phone && !validatePhone(phone)) {
+      return res.status(400).json({ message: 'Invalid phone number format' });
+    }
+
     if (dateError) {
       return res.status(400).json({ message: dateError });
     }
@@ -238,6 +251,20 @@ async function createReservation(req, res) {
         requested_room_ids: normalizedRoomIds,
         matched_rooms: availableRooms.map((room) => room.id)
       });
+    }
+
+    // Validate guest count against room capacities
+    for (const room of availableRooms) {
+      const occupancyError = validateOccupancy(
+        adult_count,
+        child_count,
+        room.base_capacity,
+        room.max_capacity
+      );
+      if (occupancyError) {
+        await connection.rollback();
+        return res.status(400).json({ message: occupancyError });
+      }
     }
 
     let guestId;
@@ -786,6 +813,13 @@ async function updateReservationStatus(req, res) {
       return res.status(400).json({ message: 'status is required' });
     }
 
+    // Validate status is a valid reservation status
+    try {
+      validateEnum('reservation_status', status, 'reservation_status');
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
     await connection.beginTransaction();
 
     const [currentRows] = await connection.query(
@@ -931,6 +965,112 @@ async function confirmReservationManually(req, res) {
   }
 }
 
+// POST endpoint for my-bookings list (uses email from body instead of query string)
+async function getMyBookingsList(req, res) {
+  try {
+    const { email } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ message: 'email is required in request body' });
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      return res.status(400).json({ message: 'email cannot be empty' });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.reservation_code,
+        r.confirmation_code,
+        r.check_in_date,
+        r.check_out_date,
+        r.reservation_status,
+        r.payment_status,
+        r.total_amount,
+        r.amount_paid,
+        r.balance_due,
+        r.created_at
+      FROM reservations r
+      JOIN guests g ON g.id = r.guest_id
+      WHERE g.email = ?
+      ORDER BY r.created_at DESC
+      `,
+      [trimmedEmail]
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to fetch bookings' });
+  }
+}
+
+// POST endpoint for my-bookings receipt (uses email from body instead of query string)
+async function getMyBookingReceiptPost(req, res) {
+  try {
+    const code = req.params.code;
+    const { email } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ message: 'email is required in request body' });
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      return res.status(400).json({ message: 'email cannot be empty' });
+    }
+
+    const reservation = await fetchReservationDetails(
+      pool,
+      'r.reservation_code = ? AND g.email = ?',
+      [code, trimmedEmail]
+    );
+
+    if (!reservation) {
+      return res.status(404).json({ message: 'Booking not found for this email' });
+    }
+
+    const roomCharges = (reservation.rooms || []).map((room) => ({
+      item: `${room.room_type_name} ${room.room_number} (${room.room_name})`,
+      nights: Number(room.nights || 0),
+      unit_price: Number(room.nightly_rate || 0),
+      amount: Number(room.line_total || 0)
+    }));
+
+    res.json({
+      issued_at: new Date().toISOString(),
+      reservation: {
+        reservation_code: reservation.reservation_code,
+        confirmation_code: reservation.confirmation_code,
+        guest_name: reservation.guest_name,
+        guest_email: reservation.guest_email,
+        check_in_date: reservation.check_in_date,
+        check_out_date: reservation.check_out_date,
+        reservation_status: reservation.reservation_status,
+        payment_status: reservation.payment_status,
+        total_amount: Number(reservation.total_amount || 0),
+        amount_paid: Number(reservation.amount_paid || 0),
+        balance_due: Number(reservation.balance_due || 0)
+      },
+      room_charges: roomCharges,
+      payments: (reservation.payments || []).map((payment) => ({
+        payment_method: payment.payment_method,
+        payment_channel: payment.payment_channel,
+        payment_status: payment.payment_status,
+        amount: Number(payment.amount || 0),
+        reference_number: payment.reference_number,
+        paid_at: payment.paid_at || payment.created_at
+      }))
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to generate receipt' });
+  }
+}
+
 module.exports = {
   getReservations,
   getReservationById,
@@ -942,6 +1082,8 @@ module.exports = {
   updateReservationStatus,
   confirmReservationManually,
   getMyBookings,
+  getMyBookingsList,
   cancelMyBooking,
-  getMyBookingReceipt
+  getMyBookingReceipt,
+  getMyBookingReceiptPost
 };

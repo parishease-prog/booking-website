@@ -1,33 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
-import { apiGet } from '../services/api.js';
+import { apiPost } from '../services/api.js';
 import { formatPeso } from '../utils/format.js';
+import { sanitizeErrorMessage } from '../utils/validation.js';
+import { downloadBookingConfirmationPDF } from '../utils/pdf.js';
 
 function BookingReceiptPage() {
   const { code } = useParams();
-  const [searchParams] = useSearchParams();
-  const email = searchParams.get('email') || '';
+  const navigate = useNavigate();
   const [receipt, setReceipt] = useState(null);
   const [message, setMessage] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     async function loadReceipt() {
+      // Get email from sessionStorage (set when navigating from MyBookingsPage)
+      const email = sessionStorage.getItem('booking_email') || '';
+      
       if (!email.trim()) {
-        setMessage({ type: 'error', text: 'Email query parameter is required to load receipt.' });
+        setMessage({ type: 'error', text: 'Email is required to load receipt. Please use the My Bookings page to access receipts.' });
         return;
       }
 
       try {
-        const data = await apiGet(`/my-bookings/${encodeURIComponent(code)}/receipt?email=${encodeURIComponent(email.trim())}`);
+        // Use POST to avoid exposing email in URL
+        const data = await apiPost(`/my-bookings/${encodeURIComponent(code)}/receipt`, { email: email.trim() });
         setReceipt(data);
       } catch (error) {
-        setMessage({ type: 'error', text: error.message });
+        const isDev = import.meta.env.DEV;
+        setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
       }
     }
 
     loadReceipt().catch(() => {});
-  }, [code, email]);
+  }, [code]);
 
   const totals = useMemo(() => {
     if (!receipt?.reservation) {
@@ -53,6 +60,21 @@ function BookingReceiptPage() {
     anchor.download = `${receipt.reservation.reservation_code}-receipt.json`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadPDF() {
+    if (!receipt?.reservation) {
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      downloadBookingConfirmationPDF(receipt.reservation);
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to download PDF: ' + error.message });
+    } finally {
+      setDownloading(false);
+    }
   }
 
   return (
@@ -103,6 +125,9 @@ function BookingReceiptPage() {
             <div className="action-row">
               <button type="button" className="btn btn-primary" onClick={() => window.print()}>
                 Print Receipt
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={downloadPDF} disabled={downloading}>
+                {downloading ? 'Generating PDF...' : '📄 Download PDF'}
               </button>
               <button type="button" className="btn btn-secondary" onClick={downloadJson}>
                 Download JSON

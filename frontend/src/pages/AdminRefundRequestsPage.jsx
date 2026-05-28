@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import MessageBox from '../components/MessageBox.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import MessageBox from '../components/MessageBox.jsx'
+import DateFilter from '../components/DateFilter.jsx';
 import { apiDelete, apiGet, apiPatch } from '../services/api.js';
 import { formatPeso } from '../utils/format.js';
 import { getAdminToken } from '../utils/adminSession.js';
@@ -7,7 +8,7 @@ import { getAdminToken } from '../utils/adminSession.js';
 const statusOptions = [
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' }
+  { value: 'denied', label: 'Denied' }
 ];
 
 function formatDateTime(value) {
@@ -22,6 +23,7 @@ function formatDateTime(value) {
 function AdminRefundRequestsPage() {
   const token = getAdminToken();
   const [requests, setRequests] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -48,9 +50,21 @@ function AdminRefundRequestsPage() {
     loadRequests();
   }, [statusFilter, token]);
 
+  const filteredRequests = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return requests;
+    }
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return requests.filter((request) => {
+      const requestDate = new Date(request.created_at);
+      return requestDate >= start && requestDate < end;
+    });
+  }, [requests, dateRange]);
+
   async function handleSelectRequest(request) {
     setSelectedRequest(request);
-    setResponseNotes(request.response_notes || '');
+    setResponseNotes(request.review_notes || '');
   }
 
   async function handleUpdateStatus(newStatus) {
@@ -58,6 +72,13 @@ function AdminRefundRequestsPage() {
 
     try {
       setUpdatingId(selectedRequest.id);
+      console.log('Updating refund request:', {
+        id: selectedRequest.id,
+        newStatus,
+        responseNotes,
+        token: token ? 'present' : 'missing'
+      });
+      
       await apiPatch(
         `/requests/refund-requests/${selectedRequest.id}`,
         {
@@ -71,6 +92,7 @@ function AdminRefundRequestsPage() {
       await loadRequests();
       setSelectedRequest(null);
     } catch (error) {
+      console.error('Update failed:', error);
       setMessage({ type: 'error', text: error.message });
     } finally {
       setUpdatingId(null);
@@ -122,8 +144,10 @@ function AdminRefundRequestsPage() {
           </label>
         </div>
 
-        <div className={requests.length ? 'room-list' : 'room-list empty-state'}>
-          {loading ? 'Loading requests...' : requests.length ? requests.map((request) => (
+        <DateFilter onDateRangeChange={setDateRange} />
+
+        <div className={filteredRequests.length ? 'room-list' : 'room-list empty-state'}>
+          {loading ? 'Loading requests...' : filteredRequests.length ? filteredRequests.map((request) => (
             <article
               className={`room-card${selectedRequest?.id === request.id ? ' selected' : ''}`}
               key={request.id}
@@ -170,13 +194,13 @@ function AdminRefundRequestsPage() {
               {selectedRequest.reason}
             </p>
 
-            {selectedRequest.response_notes && (
+            {selectedRequest.review_notes && (
               <>
                 <div className="panel-header">
                   <h3>Response Notes</h3>
                 </div>
                 <p className="room-meta" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {selectedRequest.response_notes}
+                  {selectedRequest.review_notes}
                 </p>
               </>
             )}

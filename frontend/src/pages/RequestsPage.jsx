@@ -6,8 +6,7 @@ import { formatPeso } from '../utils/format.js';
 const requestTypes = [
   { value: 'cancellation', label: 'Cancel Reservation' },
   { value: 'refund', label: 'Request Refund' },
-  { value: 'extension', label: 'Extend Stay' },
-  { value: 'transfer', label: 'Change Room' }
+  { value: 'extension', label: 'Extend Stay' }
 ];
 
 function formatDate(value) {
@@ -28,9 +27,7 @@ function RequestsPage() {
   const [requestType, setRequestType] = useState('');
   const [form, setForm] = useState({
     reason: '',
-    amount: '',
-    newCheckOutDate: '',
-    notes: ''
+    newCheckOutDate: ''
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,17 +102,12 @@ function RequestsPage() {
           reason: form.reason
         };
       } else if (requestType === 'refund') {
-        if (!form.amount || Number(form.amount) <= 0) {
-          setMessage({ type: 'error', text: 'Please enter a valid refund amount.' });
-          setSubmitting(false);
-          return;
-        }
         endpoint = '/requests/refund-requests';
         payload = {
           reservation_id: selectedBooking.id,
           payment_id: null,
           reason: form.reason,
-          requested_amount: Number(form.amount)
+          requested_amount: selectedBooking.total_amount
         };
       } else if (requestType === 'extension') {
         if (!form.newCheckOutDate) {
@@ -126,22 +118,9 @@ function RequestsPage() {
         endpoint = '/requests/stay-extensions';
         payload = {
           reservation_id: selectedBooking.id,
-          reservation_room_id: selectedBooking.reservation_rooms?.[0]?.id || 1,
           current_check_out_date: formatDate(selectedBooking.check_out_date),
           requested_check_out_date: form.newCheckOutDate,
           reason: form.reason
-        };
-      } else if (requestType === 'transfer') {
-        endpoint = '/requests/room-transfers';
-        payload = {
-          reservation_id: selectedBooking.id,
-          reservation_room_id: selectedBooking.reservation_rooms?.[0]?.id || 1,
-          from_room_id: selectedBooking.reservation_rooms?.[0]?.room_id || 1,
-          to_room_id: 1,
-          reason: form.reason,
-          effective_date: formatDate(selectedBooking.check_in_date),
-          processed_by_user_id: null,
-          notes: form.notes
         };
       }
 
@@ -153,7 +132,7 @@ function RequestsPage() {
       });
 
       setRequestType('');
-      setForm({ reason: '', amount: '', newCheckOutDate: '', notes: '' });
+      setForm({ reason: '', newCheckOutDate: '' });
       setSelectedBookingId(null);
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
@@ -260,19 +239,9 @@ function RequestsPage() {
               </label>
 
               {requestType === 'refund' && (
-                <label>
-                  <span>Refund Amount</span>
-                  <input
-                    type="number"
-                    name="amount"
-                    value={form.amount}
-                    onChange={updateField}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                </label>
+                <div className="summary-card">
+                  <div><strong>Refund Amount:</strong> {formatPeso(selectedBooking.total_amount)}</div>
+                </div>
               )}
 
               {requestType === 'extension' && (
@@ -299,19 +268,6 @@ function RequestsPage() {
                   required
                 />
               </label>
-
-              {requestType === 'transfer' && (
-                <label className="full-width">
-                  <span>Additional Notes (optional)</span>
-                  <textarea
-                    name="notes"
-                    rows="2"
-                    value={form.notes}
-                    onChange={updateField}
-                    placeholder="Any additional information..."
-                  />
-                </label>
-              )}
 
               <div className="action-row">
                 <button type="submit" className="btn btn-primary" disabled={submitting}>

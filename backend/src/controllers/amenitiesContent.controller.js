@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { validateUrl, validateText } = require('../utils/validation');
 
 const defaultAmenitiesContent = {
   eyebrow: 'Amenities',
@@ -65,6 +66,13 @@ async function saveAmenitiesContent(req, res) {
     if (!eyebrow || !title) {
       return res.status(400).json({
         message: 'Eyebrow and title are required'
+      });
+    }
+
+    // Validate URL if provided
+    if (image_url && !validateUrl(image_url)) {
+      return res.status(400).json({
+        message: 'Invalid image URL format'
       });
     }
 

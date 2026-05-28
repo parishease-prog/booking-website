@@ -3,11 +3,13 @@ import { Link, useParams } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
 import { apiGet } from '../services/api.js';
 import { formatPeso } from '../utils/format.js';
+import { downloadBookingConfirmationPDF } from '../utils/pdf.js';
 
 function BookingSuccessPage() {
   const { code } = useParams();
   const [reservation, setReservation] = useState(null);
   const [message, setMessage] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -22,13 +24,25 @@ function BookingSuccessPage() {
     load().catch(() => {});
   }, [code]);
 
+  function handleDownloadPDF() {
+    if (!reservation) return;
+
+    try {
+      setDownloading(true);
+      downloadBookingConfirmationPDF(reservation);
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Failed to download PDF: ' + error.message });
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <main className="main-grid">
       <section className="panel">
         <div className="panel-header">
           <p className="eyebrow">Booking Complete</p>
-          <h1 className="page-title">Reservation Confirmed</h1>
-          <p>Your booking has been finalized and a reference is now available.</p>
+          <h1 className="page-title">Reservation Summary</h1>
         </div>
 
         <MessageBox message={message} />
@@ -48,7 +62,15 @@ function BookingSuccessPage() {
         ) : null}
 
         <div className="action-row">
-          <Link to="/my-bookings" className="btn btn-primary">Manage My Bookings</Link>
+          <button 
+            type="button" 
+            className="btn btn-primary" 
+            onClick={handleDownloadPDF}
+            disabled={!reservation || downloading}
+          >
+            {downloading ? 'Downloading...' : '📥 Download Confirmation'}
+          </button>
+          <Link to="/my-bookings" className="btn btn-secondary">Manage My Bookings</Link>
           <Link to="/rooms" className="btn btn-secondary">Browse More Rooms</Link>
         </div>
       </section>

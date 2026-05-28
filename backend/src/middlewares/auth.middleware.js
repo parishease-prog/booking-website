@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-development-secret';
+if (!process.env.JWT_SECRET) {
+  throw new Error('CRITICAL: JWT_SECRET environment variable must be set for security. Update your .env file immediately.');
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 function extractToken(req) {
   const authHeader = req.headers.authorization || '';

@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import MessageBox from '../components/MessageBox.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import MessageBox from '../components/MessageBox.jsx'
+import DateFilter from '../components/DateFilter.jsx';
 import { apiDelete, apiGet, apiPatch } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
 
 const statusOptions = [
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' }
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' }
 ];
 
 function formatDate(value) {
@@ -30,6 +32,7 @@ function formatDateTime(value) {
 function AdminRoomTransfersPage() {
   const token = getAdminToken();
   const [requests, setRequests] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -55,6 +58,18 @@ function AdminRoomTransfersPage() {
   useEffect(() => {
     loadRequests();
   }, [statusFilter, token]);
+
+  const filteredRequests = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return requests;
+    }
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return requests.filter((request) => {
+      const requestDate = new Date(request.created_at);
+      return requestDate >= start && requestDate < end;
+    });
+  }, [requests, dateRange]);
 
   async function handleSelectRequest(request) {
     setSelectedRequest(request);
@@ -130,8 +145,10 @@ function AdminRoomTransfersPage() {
           </label>
         </div>
 
-        <div className={requests.length ? 'room-list' : 'room-list empty-state'}>
-          {loading ? 'Loading requests...' : requests.length ? requests.map((request) => (
+        <DateFilter onDateRangeChange={setDateRange} />
+
+        <div className={filteredRequests.length ? 'room-list' : 'room-list empty-state'}>
+          {loading ? 'Loading requests...' : filteredRequests.length ? filteredRequests.map((request) => (
             <article
               className={`room-card${selectedRequest?.id === request.id ? ' selected' : ''}`}
               key={request.id}
@@ -146,7 +163,7 @@ function AdminRoomTransfersPage() {
                   </p>
                 </div>
                 <span className="tag">{
-                  statusOptions.find(o => o.value === request.status)?.label || request.status
+                  statusOptions.find(o => o.value === request.transfer_status)?.label || request.transfer_status
                 }</span>
               </header>
               <p className="room-meta">{request.reason?.substring(0, 100)}...</p>
@@ -169,7 +186,7 @@ function AdminRoomTransfersPage() {
               <div><strong>From Room:</strong> {selectedRequest.from_room_number || selectedRequest.from_room_id}</div>
               <div><strong>To Room:</strong> {selectedRequest.to_room_number || selectedRequest.to_room_id}</div>
               <div><strong>Status:</strong> {
-                statusOptions.find(o => o.value === selectedRequest.status)?.label || selectedRequest.status
+                statusOptions.find(o => o.value === selectedRequest.transfer_status)?.label || selectedRequest.transfer_status
               }</div>
               <div><strong>Requested:</strong> {formatDateTime(selectedRequest.created_at)}</div>
             </div>
@@ -211,7 +228,7 @@ function AdminRoomTransfersPage() {
                 <label>
                   <span>Status</span>
                   <select
-                    value={selectedRequest.status}
+                    value={selectedRequest.transfer_status}
                     onChange={(e) => handleUpdateStatus(e.target.value)}
                     disabled={updatingId === selectedRequest.id}
                   >

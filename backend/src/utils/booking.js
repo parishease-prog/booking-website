@@ -10,6 +10,29 @@ function validateDateRange(checkInDate, checkOutDate) {
   return null;
 }
 
+/**
+ * Validate guest occupancy against room capacity
+ * @param {number} adultCount - Number of adults
+ * @param {number} childCount - Number of children
+ * @param {number} baseCapacity - Room base capacity
+ * @param {number} maxCapacity - Room maximum capacity
+ * @returns {string|null} - Error message if invalid, null if valid
+ */
+function validateOccupancy(adultCount, childCount, baseCapacity, maxCapacity) {
+  const totalGuests = Number(adultCount || 0) + Number(childCount || 0);
+  const maxCap = Number(maxCapacity || baseCapacity || 2);
+
+  if (totalGuests < 1) {
+    return 'At least one adult is required';
+  }
+
+  if (totalGuests > maxCap) {
+    return `Total guests (${totalGuests}) exceeds room maximum capacity (${maxCap})`;
+  }
+
+  return null;
+}
+
 function generateReservationCode() {
   return `RES-${Date.now()}`;
 }
@@ -267,6 +290,7 @@ async function updateReservationPaymentSummary(connection, reservationId) {
 
 module.exports = {
   validateDateRange,
+  validateOccupancy,
   generateReservationCode,
   generateConfirmationCode,
   generateHoldToken,

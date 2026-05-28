@@ -1,6 +1,15 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Whitelist of allowed proxy targets
+const ALLOWED_PROXY_HOSTS = [
+  'http://localhost:5000',
+  'http://localhost:5001',
+  'http://localhost:8000',
+  'https://api.example.com', // Update with your actual production domain
+  'https://api.brewspot.com'
+];
+
 function resolveProxyTarget(rawTarget) {
   if (!rawTarget) {
     return 'http://localhost:5000';
@@ -8,9 +17,18 @@ function resolveProxyTarget(rawTarget) {
 
   try {
     const parsed = new URL(rawTarget);
-    return parsed.origin;
+    const origin = parsed.origin;
+
+    // Check if target is in whitelist
+    if (!ALLOWED_PROXY_HOSTS.includes(origin)) {
+      console.warn(`[Vite] Proxy target ${origin} not in whitelist. Using default.`);
+      return 'http://localhost:5000';
+    }
+
+    return origin;
   } catch (error) {
-    return rawTarget;
+    console.warn(`[Vite] Invalid proxy target URL: ${rawTarget}. Using default.`);
+    return 'http://localhost:5000';
   }
 }
 

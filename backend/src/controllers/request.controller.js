@@ -1,4 +1,6 @@
 const pool = require('../config/db');
+const { validateText } = require('../utils/validation');
+const { validateEnum } = require('../utils/enums');
 
 async function getCancellationRequests(req, res) {
   try {
@@ -25,6 +27,11 @@ async function createCancellationRequest(req, res) {
       return res.status(400).json({ message: 'reservation_id and reason are required' });
     }
 
+    // Validate reason length (max 500 chars)
+    if (!validateText(reason, 500)) {
+      return res.status(400).json({ message: 'Reason must be 1-500 characters' });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO cancellation_requests (
@@ -35,7 +42,7 @@ async function createCancellationRequest(req, res) {
       )
       VALUES (?, ?, ?, 'pending')
       `,
-      [reservation_id, requested_by, reason]
+      [reservation_id, requested_by, reason.trim()]
     );
 
     res.status(201).json({
@@ -80,6 +87,32 @@ async function createRefundRequest(req, res) {
       });
     }
 
+    // Validate reason length (max 500 chars)
+    if (!validateText(reason, 500)) {
+      return res.status(400).json({ message: 'Reason must be 1-500 characters' });
+    }
+
+    // Fetch the reservation to validate the requested amount
+    const [reservations] = await pool.query(
+      'SELECT total_amount FROM reservations WHERE id = ?',
+      [reservation_id]
+    );
+
+    if (reservations.length === 0) {
+      return res.status(404).json({ message: 'Reservation not found' });
+    }
+
+    const reservation = reservations[0];
+    const reservationTotal = Number(reservation.total_amount);
+    const requestedAmount = Number(requested_amount);
+
+    // Validate that requested amount matches the reservation total
+    if (requestedAmount !== reservationTotal) {
+      return res.status(400).json({
+        message: `Refund amount must match the reservation total of ${reservationTotal}`
+      });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO refund_requests (
@@ -91,7 +124,7 @@ async function createRefundRequest(req, res) {
       )
       VALUES (?, ?, ?, 'pending', ?)
       `,
-      [reservation_id, payment_id || null, reason, requested_amount]
+      [reservation_id, payment_id || null, reason.trim(), requested_amount]
     );
 
     res.status(201).json({
@@ -125,7 +158,6 @@ async function createStayExtension(req, res) {
   try {
     const {
       reservation_id,
-      reservation_room_id,
       current_check_out_date,
       requested_check_out_date,
       reason
@@ -133,14 +165,25 @@ async function createStayExtension(req, res) {
 
     if (
       !reservation_id ||
-      !reservation_room_id ||
       !current_check_out_date ||
       !requested_check_out_date
     ) {
       return res.status(400).json({
-        message: 'reservation_id, reservation_room_id, current_check_out_date, and requested_check_out_date are required'
+        message: 'reservation_id, current_check_out_date, and requested_check_out_date are required'
       });
     }
+
+    // Fetch the first reservation_room_id for this reservation
+    const [reservationRooms] = await pool.query(
+      'SELECT id FROM reservation_rooms WHERE reservation_id = ? LIMIT 1',
+      [reservation_id]
+    );
+
+    if (reservationRooms.length === 0) {
+      return res.status(404).json({ message: 'No rooms found for this reservation' });
+    }
+
+    const reservation_room_id = reservationRooms[0].id;
 
     const [result] = await pool.query(
       `
@@ -201,8 +244,6 @@ async function createRoomTransfer(req, res) {
   try {
     const {
       reservation_id,
-      reservation_room_id,
-      from_room_id,
       to_room_id,
       reason,
       effective_date,
@@ -212,16 +253,27 @@ async function createRoomTransfer(req, res) {
 
     if (
       !reservation_id ||
-      !reservation_room_id ||
-      !from_room_id ||
       !to_room_id ||
       !reason ||
       !effective_date
     ) {
       return res.status(400).json({
-        message: 'reservation_id, reservation_room_id, from_room_id, to_room_id, reason, and effective_date are required'
+        message: 'reservation_id, to_room_id, reason, and effective_date are required'
       });
     }
+
+    // Fetch the first reservation_room_id and from_room_id for this reservation
+    const [reservationRooms] = await pool.query(
+      `SELECT id, room_id FROM reservation_rooms WHERE reservation_id = ? LIMIT 1`,
+      [reservation_id]
+    );
+
+    if (reservationRooms.length === 0) {
+      return res.status(404).json({ message: 'No rooms found for this reservation' });
+    }
+
+    const reservation_room_id = reservationRooms[0].id;
+    const from_room_id = reservationRooms[0].room_id;
 
     const [result] = await pool.query(
       `
@@ -270,6 +322,13 @@ async function updateCancellationRequest(req, res) {
       return res.status(400).json({ message: 'request_status is required' });
     }
 
+    // Validate status is valid for cancellation request
+    try {
+      validateEnum('cancellation_request_status', request_status, 'request_status');
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
     await pool.query(
       `
       UPDATE cancellation_requests
@@ -302,22 +361,36 @@ async function updateRefundRequest(req, res) {
     const { id } = req.params;
     const { request_status, response_notes } = req.body;
 
+    console.log('updateRefundRequest called:', { id, request_status, response_notes });
+
     if (!request_status) {
+      console.log('Missing request_status');
       return res.status(400).json({ message: 'request_status is required' });
     }
 
-    await pool.query(
+    // Validate status is valid for refund request
+    try {
+      validateEnum('refund_request_status', request_status, 'request_status');
+      console.log('Status validation passed');
+    } catch (error) {
+      console.log('Status validation failed:', error.message);
+      return res.status(400).json({ message: error.message });
+    }
+
+    const updateResult = await pool.query(
       `
       UPDATE refund_requests
-      SET request_status = ?, response_notes = ?
+      SET request_status = ?, review_notes = ?
       WHERE id = ?
       `,
       [request_status, response_notes || null, id]
     );
 
+    console.log('Update result:', updateResult);
+
     res.json({ message: 'Refund request updated successfully' });
   } catch (error) {
-    console.error(error);
+    console.error('Error in updateRefundRequest:', error);
     res.status(500).json({ message: 'Failed to update refund request' });
   }
 }
@@ -345,7 +418,7 @@ async function updateStayExtension(req, res) {
     await pool.query(
       `
       UPDATE stay_extensions
-      SET status = ?, response_notes = ?
+      SET status = ?, notes = ?
       WHERE id = ?
       `,
       [status, response_notes || null, id]

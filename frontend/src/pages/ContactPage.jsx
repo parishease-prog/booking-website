@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
 import { apiPost } from '../services/api.js';
 
@@ -113,6 +114,15 @@ function ContactPage() {
             <div>Use track booking to check reservation status.</div>
             <div>Keep the reservation code after submitting a booking.</div>
           </div>
+        </section>
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Check Inquiry Status</h2>
+          </div>
+          <p style={{ marginBottom: '1rem' }}>Want to check the status of your inquiry and see our response?</p>
+          <Link to="/inquiry-lookup" className="btn btn-secondary" style={{ display: 'block', textAlign: 'center' }}>
+            Check Inquiry Status
+          </Link>
         </section>
       </aside>
     </main>

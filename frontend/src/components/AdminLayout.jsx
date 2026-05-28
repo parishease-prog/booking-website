@@ -1,5 +1,7 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { clearAdminSession, getStoredAdminUser } from '../utils/adminSession.js';
+import { Outlet } from 'react-router-dom';
+import CollapsibleNavMenu from './CollapsibleNavMenu';
 
 function AdminLayout() {
   const navigate = useNavigate();
@@ -13,52 +15,18 @@ function AdminLayout() {
   return (
     <div className="page-shell">
       <header className="site-header admin-header">
-        <div>
+        <div className="admin-header-brand">
           <div className="brand-mark">Admin Panel</div>
           <div className="admin-subtitle">{adminUser?.full_name || 'Administrator'}</div>
         </div>
 
-        <nav className="site-nav" aria-label="Admin">
-          <NavLink to="/admin/reservations" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Reservations
-          </NavLink>
-          <NavLink to="/admin/payments" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Payments
-          </NavLink>
-          <NavLink to="/admin/inquiries" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Inquiries
-          </NavLink>
-          <NavLink to="/admin/cancellation-requests" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Cancellations
-          </NavLink>
-          <NavLink to="/admin/refund-requests" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Refunds
-          </NavLink>
-          <NavLink to="/admin/stay-extensions" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Extensions
-          </NavLink>
-          <NavLink to="/admin/room-transfers" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Room Changes
-          </NavLink>
-          <NavLink to="/admin/operations" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Operations
-          </NavLink>
-          <NavLink to="/admin/rooms" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Rooms
-          </NavLink>
-          <NavLink to="/admin/landing-content" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Landing Section
-          </NavLink>
-          <NavLink to="/admin/amenities" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Amenities
-          </NavLink>
-          <NavLink to="/admin/slides" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            Homepage Slides
-          </NavLink>
-          <button type="button" className="btn btn-secondary" onClick={handleLogout}>
-            Log Out
-          </button>
-        </nav>
+        <div className="admin-nav-container">
+          <CollapsibleNavMenu />
+        </div>
+
+        <button type="button" className="btn btn-secondary admin-logout-btn" onClick={handleLogout}>
+          Log Out
+        </button>
       </header>
 
       <Outlet />

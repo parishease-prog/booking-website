@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet } from '../services/api.js';
+import { validateUrl } from '../utils/validation.js';
 
 const placeholderSlides = [
   {
@@ -28,6 +29,11 @@ function SlideAction({ slide }) {
         {slide.button_label}
       </Link>
     );
+  }
+
+  // Validate external URLs to prevent XSS/malicious links
+  if (slide.button_link && !validateUrl(slide.button_link)) {
+    return null; // Don't render invalid URLs
   }
 
   return (

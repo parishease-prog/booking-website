@@ -153,6 +153,22 @@ function AdminRoomsPage() {
     setRoomTypeForm(initialRoomTypeForm);
   }
 
+  async function handleDeleteRoomType(roomTypeId) {
+    if (!window.confirm('Are you sure you want to delete this room type?')) {
+      return;
+    }
+
+    try {
+      setMessage(null);
+      await apiDelete(`/admin/room-types/${roomTypeId}`, { token });
+      setMessage({ type: 'success', text: 'Room type deleted successfully.' });
+      await loadRoomTypes();
+      resetRoomTypeForm();
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    }
+  }
+
   async function handleSaveRoomType(event) {
     event.preventDefault();
     setMessage(null);
@@ -448,6 +464,9 @@ function AdminRoomsPage() {
                 <div className="action-row">
                   <button type="button" className="btn btn-secondary" onClick={() => startEditRoomType(roomType)}>
                     Edit
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => handleDeleteRoomType(roomType.id)}>
+                    Delete
                   </button>
                 </div>
               </article>

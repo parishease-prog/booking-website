@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
-import { apiGet, apiPost } from '../services/api.js';
+import { apiPost } from '../services/api.js';
 import { formatPeso } from '../utils/format.js';
+import { validateEmail, sanitizeErrorMessage } from '../utils/validation.js';
 
 function MyBookingsPage() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [bookings, setBookings] = useState([]);
   const [message, setMessage] = useState(null);
@@ -21,16 +23,25 @@ function MyBookingsPage() {
       return;
     }
 
+    if (!validateEmail(trimmed)) {
+      setMessage({ type: 'error', text: 'Please enter a valid email address.' });
+      return;
+    }
+
     setMessage(null);
     setLoading(true);
 
     try {
-      const rows = await apiGet(`/my-bookings?email=${encodeURIComponent(trimmed)}`);
+      // Use POST to avoid exposing email in URL
+      const rows = await apiPost('/my-bookings/list', { email: trimmed });
       setBookings(Array.isArray(rows) ? rows : []);
+      // Store email in sessionStorage for receipt page access
+      sessionStorage.setItem('booking_email', trimmed);
       setMessage({ type: 'success', text: 'Bookings loaded successfully.' });
     } catch (error) {
       setBookings([]);
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setLoading(false);
     }
@@ -53,14 +64,22 @@ function MyBookingsPage() {
         reason
       });
 
-      const updated = await apiGet(`/my-bookings?email=${encodeURIComponent(email.trim())}`);
+      // Reload bookings with POST method
+      const updated = await apiPost('/my-bookings/list', { email: email.trim() });
       setBookings(Array.isArray(updated) ? updated : []);
       setMessage({ type: 'success', text: `Booking ${reservationCode} was cancelled.` });
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setCancellingCode('');
     }
+  }
+
+  function handleReceiptClick(reservationCode) {
+    // Store email in session before navigating
+    sessionStorage.setItem('booking_email', email.trim());
+    navigate(`/my-bookings/${encodeURIComponent(reservationCode)}/receipt`);
   }
 
   return (
@@ -137,14 +156,13 @@ function MyBookingsPage() {
                 </div>
 
                 <div className="action-row">
-                  <Link
+                  <button
+                    type="button"
                     className="btn btn-secondary"
-                    to={`/my-bookings/${encodeURIComponent(reservationCode)}/receipt?email=${encodeURIComponent(email.trim())}`}
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => handleReceiptClick(reservationCode)}
                   >
                     Open Receipt
-                  </Link>
+                  </button>
                   <button
                     type="button"
                     className="btn btn-accent"

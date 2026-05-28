@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import MessageBox from '../components/MessageBox.jsx';
+import DateFilter from '../components/DateFilter.jsx';
 import { apiDelete, apiGet, apiPatch } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
+import { maskEmail } from '../utils/validation.js';
 
 const statusOptions = [
   { value: 'new', label: 'New' },
@@ -25,6 +27,7 @@ function formatDateTime(value) {
 function AdminInquiriesPage() {
   const token = getAdminToken();
   const [inquiries, setInquiries] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [selectedInquiry, setSelectedInquiry] = useState(null);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +53,18 @@ function AdminInquiriesPage() {
   useEffect(() => {
     loadInquiries();
   }, [statusFilter, token]);
+
+  const filteredInquiries = useMemo(() => {
+    if (!dateRange.startDate || !dateRange.endDate) {
+      return inquiries;
+    }
+    const start = new Date(dateRange.startDate);
+    const end = new Date(dateRange.endDate);
+    return inquiries.filter((inq) => {
+      const inqDate = new Date(inq.created_at);
+      return inqDate >= start && inqDate < end;
+    });
+  }, [inquiries, dateRange]);
 
   async function handleSelectInquiry(inquiry) {
     try {
@@ -155,8 +170,10 @@ function AdminInquiriesPage() {
           </label>
         </div>
 
-        <div className={inquiries.length ? 'room-list' : 'room-list empty-state'}>
-          {loading ? 'Loading inquiries...' : inquiries.length ? inquiries.map((inquiry) => (
+        <DateFilter onDateRangeChange={setDateRange} />
+
+        <div className={filteredInquiries.length ? 'room-list' : 'room-list empty-state'}>
+          {loading ? 'Loading inquiries...' : filteredInquiries.length ? filteredInquiries.map((inquiry) => (
             <article
               className={`room-card${selectedInquiry?.id === inquiry.id ? ' selected' : ''}`}
               key={inquiry.id}
@@ -166,7 +183,7 @@ function AdminInquiriesPage() {
               <header>
                 <div>
                   <h3>{inquiry.subject}</h3>
-                  <p className="room-meta">From {inquiry.name} ({inquiry.email})</p>
+                  <p className="room-meta">From {inquiry.name} ({maskEmail(inquiry.email)})</p>
                 </div>
                 <span className="tag">{
                   statusOptions.find(o => o.value === inquiry.status)?.label || inquiry.status
@@ -189,7 +206,7 @@ function AdminInquiriesPage() {
 
             <div className="summary-card">
               <div><strong>From:</strong> {selectedInquiry.name}</div>
-              <div><strong>Email:</strong> {selectedInquiry.email}</div>
+              <div><strong>Email:</strong> {maskEmail(selectedInquiry.email)}</div>
               {selectedInquiry.phone && <div><strong>Phone:</strong> {selectedInquiry.phone}</div>}
               <div><strong>Subject:</strong> {selectedInquiry.subject}</div>
               <div><strong>Status:</strong> {

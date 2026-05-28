@@ -1,4 +1,6 @@
 const pool = require('../config/db');
+const { validateEnum } = require('../utils/enums');
+const { validateEmail, validatePhone, validateText } = require('../utils/validation');
 
 async function getInquiries(req, res) {
   try {
@@ -73,12 +75,40 @@ async function createInquiry(req, res) {
       });
     }
 
+    // Validate name format
+    const validatedName = validateText(name, 100);
+    if (!validatedName) {
+      return res.status(400).json({ message: 'Name must be 1-100 characters' });
+    }
+
+    // Validate email format
+    if (!validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Validate phone format if provided
+    if (phone && !validatePhone(phone)) {
+      return res.status(400).json({ message: 'Invalid phone format' });
+    }
+
+    // Validate subject format
+    const validatedSubject = validateText(subject, 200);
+    if (!validatedSubject) {
+      return res.status(400).json({ message: 'Subject must be 1-200 characters' });
+    }
+
+    // Validate message format
+    const validatedMessage = validateText(message, 2000);
+    if (!validatedMessage) {
+      return res.status(400).json({ message: 'Message must be 1-2000 characters' });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO inquiries (name, email, phone, subject, message)
       VALUES (?, ?, ?, ?, ?)
       `,
-      [name, email, phone || null, subject, message]
+      [validatedName, email, phone || null, validatedSubject, validatedMessage]
     );
 
     res.status(201).json({
@@ -106,37 +136,41 @@ async function updateInquiry(req, res) {
       });
     }
 
-    const fields = [];
+    // Validate status is valid if provided
+    if (status) {
+      try {
+        validateEnum('inquiry_status', status, 'status');
+      } catch (error) {
+        return res.status(400).json({ message: error.message });
+      }
+    }
+
+    // Build safe parameterized update with fixed field set
+    const updateData = {};
     const params = [];
 
     if (status) {
-      fields.push('status = ?');
+      updateData.status = status;
       params.push(status);
     }
 
     if (response_notes !== undefined) {
-      fields.push('response_notes = ?');
-      params.push(response_notes || null);
-      
-      // Only update responded_at if the inquiry is being marked as responded
-      if (status === 'responded' && !response_notes) {
-        fields.push('responded_at = NOW()');
-      }
+      updateData.response_notes = response_notes || null;
+      params.push(updateData.response_notes);
     }
 
-    // If marking as responded, set responded_at if not already set
+    // If marking as responded, update responded_at timestamp
     if (status === 'responded') {
-      fields.push('responded_at = COALESCE(responded_at, NOW())');
+      updateData.responded_at = new Date();
+      params.push(updateData.responded_at);
     }
 
+    // Build SET clause safely
+    const setClause = Object.keys(updateData).map(key => `${key} = ?`).join(', ');
     params.push(id);
 
     const [result] = await pool.query(
-      `
-      UPDATE inquiries
-      SET ${fields.join(', ')}
-      WHERE id = ?
-      `,
+      `UPDATE inquiries SET ${setClause} WHERE id = ?`,
       params
     );
 
@@ -175,10 +209,42 @@ async function deleteInquiry(req, res) {
   }
 }
 
+async function getInquiriesByEmail(req, res) {
+  try {
+    const { email } = req.query;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    // Validate email format
+    if (!validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id, name, email, phone, subject, message, status, responded_at, response_notes, created_at
+      FROM inquiries
+      WHERE email = ?
+      ORDER BY created_at DESC
+      `,
+      [email]
+    );
+
+    console.log(`[DEBUG] getInquiriesByEmail for ${email}: found ${rows.length} inquiries`);
+    res.json(rows);
+  } catch (error) {
+    console.error('[ERROR] getInquiriesByEmail:', error);
+    res.status(500).json({ message: 'Failed to fetch inquiries' });
+  }
+}
+
 module.exports = {
   getInquiries,
   getInquiry,
   createInquiry,
   updateInquiry,
-  deleteInquiry
+  deleteInquiry,
+  getInquiriesByEmail
 };

@@ -41,6 +41,7 @@ async function getRooms(req, res) {
         ) AS primary_image_alt
       FROM rooms r
       JOIN room_types rt ON rt.id = r.room_type_id
+      WHERE r.is_active = 1
       ORDER BY r.room_number ASC
       `
     );

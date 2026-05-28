@@ -10,8 +10,10 @@ const {
   releaseReservationHold,
   confirmReservationManually,
   getMyBookings,
+  getMyBookingsList,
   cancelMyBooking,
-  getMyBookingReceipt
+  getMyBookingReceipt,
+  getMyBookingReceiptPost
 } = require('../controllers/reservation.controller');
 const {
   authenticateAdmin,
@@ -29,8 +31,10 @@ router.post('/reservation-holds', createReservationHold);
 router.get('/reservation-holds/:token', getReservationHold);
 router.delete('/reservation-holds/:token', releaseReservationHold);
 router.get('/my-bookings', getMyBookings);
+router.post('/my-bookings/list', getMyBookingsList);
 router.post('/my-bookings/cancel', cancelMyBooking);
 router.get('/my-bookings/:code/receipt', getMyBookingReceipt);
+router.post('/my-bookings/:code/receipt', getMyBookingReceiptPost);
 router.get('/reservations/code/:code', getReservationByCode);
 router.get('/reservations/:id', getReservationById);
 router.get('/reservations', getReservations);

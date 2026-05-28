@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
 import { apiGet, apiPost, apiUploadFile } from '../services/api.js';
 import { formatPeso } from '../utils/format.js';
+import { validateFile, sanitizeErrorMessage } from '../utils/validation.js';
 
 const initialForm = {
   payment_method: 'e_wallet',
@@ -82,7 +83,8 @@ function PaymentPage() {
       setMessage({ type: 'success', text: 'Reservation found. You can submit your payment details below.' });
     } catch (error) {
       setReservation(null);
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setLoadingLookup(false);
     }
@@ -102,32 +104,19 @@ function PaymentPage() {
       return;
     }
 
-    setMessage(null);
+      setMessage(null);
 
     try {
       setSubmitting(true);
-      await apiPost('/payments', {
-        reservation_id: reservation.id,
-        payment_method: form.payment_method,
-        payment_channel: form.payment_channel || null,
-        amount,
-        payment_status: 'pending',
-        reference_number: form.reference_number || null,
-        proof_image_url: form.proof_image_url || null,
-        notes: form.notes || null
-      });
-
-      await apiPost('/payments/webhooks/generic', {
-        provider: 'manual_checkout',
-        event_id: `checkout-${reservation.id}-${Date.now()}`,
+      await apiPost('/payments/guest', {
         reservation_id: reservation.id,
         reservation_code: reservation.reservation_code,
         payment_method: form.payment_method,
         payment_channel: form.payment_channel || null,
-        payment_status: 'paid',
         amount,
-        reference_number: form.reference_number || `REF-${Date.now()}`,
-        notes: 'Auto-completed from checkout page'
+        reference_number: form.reference_number || null,
+        proof_image_url: form.proof_image_url || null,
+        notes: form.notes || null
       });
 
       const refreshed = await apiGet(`/reservations/code/${encodeURIComponent(reservation.reservation_code)}`);
@@ -141,7 +130,8 @@ function PaymentPage() {
 
       setMessage({ type: 'success', text: 'Payment submitted. Waiting for verification.' });
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setSubmitting(false);
     }
@@ -153,8 +143,17 @@ function PaymentPage() {
       return;
     }
 
+    // Validate file before upload
+    const validation = validateFile(file, 5, ['image/jpeg', 'image/png', 'image/webp']);
+    if (!validation.valid) {
+      setMessage({ type: 'error', text: validation.error });
+      event.target.value = '';
+      return;
+    }
+
     try {
       setUploadingProof(true);
+      setMessage(null);
       const uploaded = await apiUploadFile(file);
       setForm((current) => ({
         ...current,
@@ -162,7 +161,8 @@ function PaymentPage() {
       }));
       setMessage({ type: 'success', text: 'Proof file uploaded successfully.' });
     } catch (error) {
-      setMessage({ type: 'error', text: error.message });
+      const isDev = import.meta.env.DEV;
+      setMessage({ type: 'error', text: sanitizeErrorMessage(error, isDev) });
     } finally {
       setUploadingProof(false);
       event.target.value = '';

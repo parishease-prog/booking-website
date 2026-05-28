@@ -108,9 +108,9 @@ async function getActivityLogs(req, res) {
       LEFT JOIN users u ON u.id = al.user_id
       ${whereClause}
       ORDER BY al.created_at DESC
-      LIMIT ${limit}
+      LIMIT ?
       `,
-      params
+      [...params, limit]
     );
 
     res.json(rows);

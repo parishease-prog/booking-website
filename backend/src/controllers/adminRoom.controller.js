@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { validateUrl, validateText } = require('../utils/validation');
 
 async function getAdminRoomTypes(req, res) {
   try {
@@ -27,6 +28,32 @@ async function createRoomType(req, res) {
       return res.status(400).json({ message: 'name, base_capacity, max_capacity, and base_price are required' });
     }
 
+    const numBase = Number(base_capacity);
+    const numMax = Number(max_capacity);
+    const numPrice = Number(base_price);
+    const numFee = extra_guest_fee === undefined || extra_guest_fee === null ? 0 : Number(extra_guest_fee);
+
+    // Validate numeric boundaries
+    if (!Number.isInteger(numBase) || numBase < 1 || numBase > 100) {
+      return res.status(400).json({ message: 'base_capacity must be an integer between 1 and 100' });
+    }
+
+    if (!Number.isInteger(numMax) || numMax < 1 || numMax > 100) {
+      return res.status(400).json({ message: 'max_capacity must be an integer between 1 and 100' });
+    }
+
+    if (numMax < numBase) {
+      return res.status(400).json({ message: 'max_capacity cannot be less than base_capacity' });
+    }
+
+    if (!Number.isFinite(numPrice) || numPrice < 0 || numPrice > 1000000) {
+      return res.status(400).json({ message: 'base_price must be a non-negative number up to 1,000,000' });
+    }
+
+    if (!Number.isFinite(numFee) || numFee < 0 || numFee > 100000) {
+      return res.status(400).json({ message: 'extra_guest_fee must be a non-negative number up to 100,000' });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO room_types (name, description, base_capacity, max_capacity, base_price, extra_guest_fee)
@@ -35,10 +62,10 @@ async function createRoomType(req, res) {
       [
         name,
         description || null,
-        Number(base_capacity),
-        Number(max_capacity),
-        Number(base_price),
-        extra_guest_fee === undefined || extra_guest_fee === null ? 0 : Number(extra_guest_fee)
+        numBase,
+        numMax,
+        numPrice,
+        numFee
       ]
     );
 
@@ -69,6 +96,32 @@ async function updateRoomType(req, res) {
       return res.status(400).json({ message: 'name, base_capacity, max_capacity, and base_price are required' });
     }
 
+    const numBase = Number(base_capacity);
+    const numMax = Number(max_capacity);
+    const numPrice = Number(base_price);
+    const numFee = extra_guest_fee === undefined || extra_guest_fee === null ? 0 : Number(extra_guest_fee);
+
+    // Validate numeric boundaries
+    if (!Number.isInteger(numBase) || numBase < 1 || numBase > 100) {
+      return res.status(400).json({ message: 'base_capacity must be an integer between 1 and 100' });
+    }
+
+    if (!Number.isInteger(numMax) || numMax < 1 || numMax > 100) {
+      return res.status(400).json({ message: 'max_capacity must be an integer between 1 and 100' });
+    }
+
+    if (numMax < numBase) {
+      return res.status(400).json({ message: 'max_capacity cannot be less than base_capacity' });
+    }
+
+    if (!Number.isFinite(numPrice) || numPrice < 0 || numPrice > 1000000) {
+      return res.status(400).json({ message: 'base_price must be a non-negative number up to 1,000,000' });
+    }
+
+    if (!Number.isFinite(numFee) || numFee < 0 || numFee > 100000) {
+      return res.status(400).json({ message: 'extra_guest_fee must be a non-negative number up to 100,000' });
+    }
+
     const [result] = await pool.query(
       `
       UPDATE room_types
@@ -85,10 +138,10 @@ async function updateRoomType(req, res) {
       [
         name,
         description || null,
-        Number(base_capacity),
-        Number(max_capacity),
-        Number(base_price),
-        extra_guest_fee === undefined || extra_guest_fee === null ? 0 : Number(extra_guest_fee),
+        numBase,
+        numMax,
+        numPrice,
+        numFee,
         id
       ]
     );
@@ -105,6 +158,39 @@ async function updateRoomType(req, res) {
       return res.status(409).json({ message: 'Room type name already exists' });
     }
     res.status(500).json({ message: 'Failed to update room type' });
+  }
+}
+
+async function deleteRoomType(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Check if any rooms use this room type
+    const [rooms] = await pool.query(
+      'SELECT COUNT(*) as count FROM rooms WHERE room_type_id = ?',
+      [id]
+    );
+
+    if (rooms[0].count > 0) {
+      return res.status(409).json({
+        message: `Cannot delete room type. ${rooms[0].count} room(s) are using this type.`
+      });
+    }
+
+    // Delete the room type
+    const [result] = await pool.query(
+      'DELETE FROM room_types WHERE id = ?',
+      [id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'Room type not found' });
+    }
+
+    res.json({ message: 'Room type deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Failed to delete room type' });
   }
 }
 
@@ -336,6 +422,11 @@ async function addRoomImage(req, res) {
       return res.status(400).json({ message: 'image_url is required' });
     }
 
+    // Validate URL format
+    if (!validateUrl(image_url)) {
+      return res.status(400).json({ message: 'Invalid image URL format' });
+    }
+
     await connection.beginTransaction();
 
     if (is_primary) {
@@ -439,6 +530,7 @@ module.exports = {
   getAdminRoomTypes,
   createRoomType,
   updateRoomType,
+  deleteRoomType,
   getAdminRooms,
   createRoom,
   updateRoom,

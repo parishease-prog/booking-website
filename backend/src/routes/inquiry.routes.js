@@ -4,13 +4,16 @@ const {
   getInquiry,
   createInquiry,
   updateInquiry,
-  deleteInquiry
+  deleteInquiry,
+  getInquiriesByEmail
 } = require('../controllers/inquiry.controller');
 const { authenticateAdmin, requireAdminRole } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 
 // Public routes (no authentication required)
+// These must come before admin routes to be matched first
+router.get('/lookup/by-email', getInquiriesByEmail);
 router.post('/', createInquiry);
 
 // Admin routes (require authentication)

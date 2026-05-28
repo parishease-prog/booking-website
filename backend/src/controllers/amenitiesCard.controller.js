@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { validateUrl, validateText } = require('../utils/validation');
 
 async function getPublicAmenitiesCards(req, res) {
   try {
@@ -108,6 +109,15 @@ async function createAmenitiesCard(req, res) {
       return res.status(400).json({ message: 'Title and description are required' });
     }
 
+    // Validate text lengths
+    if (!validateText(title, 100)) {
+      return res.status(400).json({ message: 'Title must be 1-100 characters' });
+    }
+
+    if (!validateText(description, 500)) {
+      return res.status(400).json({ message: 'Description must be 1-500 characters' });
+    }
+
     await connection.beginTransaction();
 
     const [result] = await connection.query(
@@ -122,8 +132,8 @@ async function createAmenitiesCard(req, res) {
       VALUES (?, ?, ?, ?, ?)
       `,
       [
-        title,
-        description,
+        title.trim(),
+        description.trim(),
         Number(sort_order || 1),
         is_active ? 1 : 0,
         req.user.id
@@ -136,6 +146,11 @@ async function createAmenitiesCard(req, res) {
     for (const image of normalizedImages) {
       if (!image.image_url) {
         continue;
+      }
+
+      // Validate image URL format
+      if (!validateUrl(image.image_url)) {
+        continue; // Skip invalid URLs
       }
 
       await connection.query(

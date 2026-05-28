@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import MessageBox from '../components/MessageBox.jsx';
+import DateFilter from '../components/DateFilter.jsx';
 import { apiGet, apiPatch } from '../services/api.js';
 import { getAdminToken } from '../utils/adminSession.js';
 import { formatPeso } from '../utils/format.js';
+import { maskEmail } from '../utils/validation.js';
 
 const statusOptions = [
   { value: 'pending', label: 'Pending' },
@@ -29,6 +31,7 @@ function formatDate(value) {
 function AdminReservationsPage() {
   const token = getAdminToken();
   const [reservations, setReservations] = useState([]);
+  const [dateRange, setDateRange] = useState({ startDate: null, endDate: null });
   const [selectedId, setSelectedId] = useState(null);
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [search, setSearch] = useState('');
@@ -58,18 +61,31 @@ function AdminReservationsPage() {
   }, [token]);
 
   const filteredReservations = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) {
-      return reservations;
+    let results = reservations;
+
+    // Filter by date range
+    if (dateRange.startDate && dateRange.endDate) {
+      const start = new Date(dateRange.startDate);
+      const end = new Date(dateRange.endDate);
+      results = results.filter((res) => {
+        const resDate = new Date(res.created_at);
+        return resDate >= start && resDate < end;
+      });
     }
 
-    return reservations.filter((reservation) => {
+    // Filter by search
+    const q = search.trim().toLowerCase();
+    if (!q) {
+      return results;
+    }
+
+    return results.filter((reservation) => {
       const code = String(reservation.reservation_code || '').toLowerCase();
       const guest = String(reservation.guest_name || '').toLowerCase();
       const email = String(reservation.guest_email || '').toLowerCase();
       return code.includes(q) || guest.includes(q) || email.includes(q);
     });
-  }, [reservations, search]);
+  }, [reservations, search, dateRange]);
 
   async function loadReservationDetails(id) {
     if (!id) {
@@ -140,6 +156,8 @@ function AdminReservationsPage() {
           />
         </label>
 
+        <DateFilter onDateRangeChange={setDateRange} />
+
         <MessageBox message={message} />
 
         <div className={filteredReservations.length ? 'room-list' : 'room-list empty-state'}>
@@ -153,7 +171,7 @@ function AdminReservationsPage() {
               <header>
                 <div>
                   <h3>{reservation.reservation_code}</h3>
-                  <p className="room-meta">{reservation.guest_name} · {reservation.guest_email}</p>
+                  <p className="room-meta">{reservation.guest_name} · {maskEmail(reservation.guest_email)}</p>
                 </div>
                 <span className="tag">{reservation.reservation_status}</span>
               </header>
@@ -181,7 +199,7 @@ function AdminReservationsPage() {
             <>
               <div className="summary-card">
                 <div><strong>Guest:</strong> {selectedReservation.guest_name}</div>
-                <div><strong>Email:</strong> {selectedReservation.guest_email}</div>
+                <div><strong>Email:</strong> {maskEmail(selectedReservation.guest_email)}</div>
                 <div><strong>Phone:</strong> {selectedReservation.guest_phone || 'N/A'}</div>
                 <div><strong>Dates:</strong> {formatDate(selectedReservation.check_in_date)} to {formatDate(selectedReservation.check_out_date)}</div>
                 <div><strong>Status:</strong> {selectedReservation.reservation_status}</div>

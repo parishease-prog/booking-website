@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { validateUrl, validateText } = require('../utils/validation');
 
 async function getPublicHomepageSlides(req, res) {
   try {
@@ -65,6 +66,11 @@ async function createHomepageSlide(req, res) {
       return res.status(400).json({ message: 'Title and image URL are required' });
     }
 
+    // Validate URL format
+    if (!validateUrl(image_url)) {
+      return res.status(400).json({ message: 'Invalid image URL format' });
+    }
+
     const [result] = await pool.query(
       `
       INSERT INTO homepage_slides (
@@ -123,6 +129,11 @@ async function updateHomepageSlide(req, res) {
 
     if (!title || !image_url) {
       return res.status(400).json({ message: 'Title and image URL are required' });
+    }
+
+    // Validate URL format
+    if (!validateUrl(image_url)) {
+      return res.status(400).json({ message: 'Invalid image URL format' });
     }
 
     const [result] = await pool.query(

@@ -3,6 +3,7 @@ const {
   getAdminRoomTypes,
   createRoomType,
   updateRoomType,
+  deleteRoomType,
   getAdminRooms,
   createRoom,
   updateRoom,
@@ -21,6 +22,7 @@ const router = express.Router();
 router.get('/admin/room-types', authenticateAdmin, requireAdminRole, getAdminRoomTypes);
 router.post('/admin/room-types', authenticateAdmin, requireAdminRole, createRoomType);
 router.patch('/admin/room-types/:id', authenticateAdmin, requireAdminRole, updateRoomType);
+router.delete('/admin/room-types/:id', authenticateAdmin, requireAdminRole, deleteRoomType);
 
 router.get('/admin/rooms', authenticateAdmin, requireAdminRole, getAdminRooms);
 router.post('/admin/rooms', authenticateAdmin, requireAdminRole, createRoom);

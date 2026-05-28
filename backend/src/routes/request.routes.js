@@ -11,11 +11,7 @@ const {
   getStayExtensions,
   createStayExtension,
   updateStayExtension,
-  deleteStayExtension,
-  getRoomTransfers,
-  createRoomTransfer,
-  updateRoomTransfer,
-  deleteRoomTransfer
+  deleteStayExtension
 } = require('../controllers/request.controller');
 const { authenticateAdmin, requireAdminRole } = require('../middlewares/auth.middleware');
 
@@ -38,11 +34,5 @@ router.get('/stay-extensions', authenticateAdmin, requireAdminRole, getStayExten
 router.post('/stay-extensions', createStayExtension);
 router.patch('/stay-extensions/:id', authenticateAdmin, requireAdminRole, updateStayExtension);
 router.delete('/stay-extensions/:id', authenticateAdmin, requireAdminRole, deleteStayExtension);
-
-// Room transfers
-router.get('/room-transfers', authenticateAdmin, requireAdminRole, getRoomTransfers);
-router.post('/room-transfers', createRoomTransfer);
-router.patch('/room-transfers/:id', authenticateAdmin, requireAdminRole, updateRoomTransfer);
-router.delete('/room-transfers/:id', authenticateAdmin, requireAdminRole, deleteRoomTransfer);
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { validateEmail, validateText } = require('../utils/validation');
 
 async function getGuests(req, res) {
   try {
@@ -47,6 +48,41 @@ async function updateGuest(req, res) {
       country,
       notes
     } = req.body;
+
+    // Validate optional email if provided
+    if (email && !validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Validate optional text fields
+    if (first_name && !validateText(first_name, 100)) {
+      return res.status(400).json({ message: 'First name must be 1-100 characters' });
+    }
+
+    if (last_name && !validateText(last_name, 100)) {
+      return res.status(400).json({ message: 'Last name must be 1-100 characters' });
+    }
+
+    if (notes && !validateText(notes, 500)) {
+      return res.status(400).json({ message: 'Notes must be 1-500 characters' });
+    }
+
+    // Validate address fields if provided
+    if (address_line && !validateText(address_line, 200)) {
+      return res.status(400).json({ message: 'Address line must be 1-200 characters' });
+    }
+
+    if (city && !validateText(city, 100)) {
+      return res.status(400).json({ message: 'City must be 1-100 characters' });
+    }
+
+    if (province && !validateText(province, 100)) {
+      return res.status(400).json({ message: 'Province must be 1-100 characters' });
+    }
+
+    if (country && !validateText(country, 100)) {
+      return res.status(400).json({ message: 'Country must be 1-100 characters' });
+    }
 
     await pool.query(
       `

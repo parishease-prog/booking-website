@@ -17,7 +17,11 @@ const amenitiesCardRoutes = require('./routes/amenitiesCard.routes');
 const adminRoomRoutes = require('./routes/adminRoom.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const adminOpsRoutes = require('./routes/adminOps.routes');
+const reportRoutes = require('./routes/report.routes');
 const inquiryRoutes = require('./routes/inquiry.routes');
+
+// Import security middleware
+const { attachCSRFToken, validateCSRFToken } = require('./middlewares/csrf.middleware');
 
 // Import controller handlers for debug endpoints
 const reservationController = require('./controllers/reservation.controller');
@@ -28,6 +32,28 @@ const frontendDir = path.resolve(__dirname, '../../frontend');
 const uploadsDir = path.resolve(__dirname, '../uploads');
 
 app.use(cors());
+
+// CSRF token middleware - attach to all responses and validate on state-changing requests
+app.use(attachCSRFToken);
+app.use(validateCSRFToken);
+
+// Security headers middleware
+app.use((req, res, next) => {
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Enable XSS protection
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  // Prevent referrer leakage
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // HSTS (HTTP Strict Transport Security) - 1 year
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
 app.use(express.json({
   verify: (req, _res, buf) => {
     req.rawBody = buf?.toString('utf8') || '';
@@ -96,6 +122,7 @@ app.use(amenitiesCardRoutes);
 app.use(adminRoomRoutes);
 app.use(uploadRoutes);
 app.use(adminOpsRoutes);
+app.use(reportRoutes);
 app.use('/inquiries', inquiryRoutes);
 
 // Temporary debug endpoints that call controller handlers directly

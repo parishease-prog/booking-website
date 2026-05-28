@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const { updateReservationPaymentSummary } = require('../utils/booking');
 const { logActivity } = require('../utils/activity');
+const { validateEnum } = require('../utils/enums');
 const crypto = require('node:crypto');
 
 const WEBHOOK_SECRET = process.env.PAYMENT_WEBHOOK_SECRET || '';
@@ -103,21 +104,32 @@ async function createPayment(req, res) {
   try {
     const {
       reservation_id,
+      reservation_code,
       payment_method,
       payment_channel,
-      provider,
-      provider_event_id,
       amount,
-      payment_status = 'pending',
       reference_number,
       proof_image_url,
       notes
     } = req.body;
 
-    if (!reservation_id || !payment_method || !amount) {
+    if ((!reservation_id && !reservation_code) || !payment_method || !amount) {
       return res.status(400).json({
-        message: 'reservation_id, payment_method, and amount are required'
+        message: 'reservation_id (or reservation_code), payment_method, and amount are required'
       });
+    }
+
+    // Guest submissions are always recorded as pending.
+    // Admin-paid/partial/refunded states should be applied via admin endpoints or verified webhooks.
+    const payment_status = 'pending';
+    const provider = 'guest_submission';
+    const provider_event_id = null;
+
+    // Validate enum values
+    try {
+      validateEnum('payment_method', payment_method, 'payment_method');
+    } catch (error) {
+      return res.status(400).json({ message: error.message });
     }
 
     const numericAmount = Number(amount);
@@ -127,30 +139,28 @@ async function createPayment(req, res) {
 
     await connection.beginTransaction();
 
-    if (provider_event_id) {
-      const [existingRows] = await connection.query(
-        'SELECT id FROM payments WHERE provider_event_id = ? LIMIT 1',
-        [provider_event_id]
-      );
-
-      if (existingRows.length) {
-        await connection.rollback();
-        return res.status(200).json({
-          message: 'Payment event already recorded',
-          payment_id: existingRows[0].id
-        });
-      }
-    }
-
     const [reservationRows] = await connection.query(
-      'SELECT id FROM reservations WHERE id = ? LIMIT 1',
-      [reservation_id]
+      `
+      SELECT id
+      FROM reservations
+      WHERE (? IS NOT NULL AND id = ?)
+        OR (? IS NOT NULL AND reservation_code = ?)
+      LIMIT 1
+      `,
+      [
+        reservation_id ?? null,
+        reservation_id ?? null,
+        reservation_code ?? null,
+        reservation_code ?? null
+      ]
     );
 
     if (!reservationRows.length) {
       await connection.rollback();
       return res.status(404).json({ message: 'Reservation not found' });
     }
+
+    const resolvedReservationId = reservationRows[0].id;
 
     const [result] = await connection.query(
       `
@@ -168,31 +178,32 @@ async function createPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
-        reservation_id,
+        resolvedReservationId,
         payment_method,
         payment_channel || null,
-        provider || null,
-        provider_event_id || null,
+        provider,
+        provider_event_id,
         numericAmount,
         payment_status,
         reference_number || null,
         proof_image_url || null,
-        null,
+        null, // paid_at (guest submissions are not considered paid)
+        null, // recorded_by_user_id
         notes || null
       ]
     );
 
-    await updateReservationPaymentSummary(connection, reservation_id);
+    await updateReservationPaymentSummary(connection, resolvedReservationId);
 
     await logActivity(connection, {
       userId: null,
       entityType: 'payment',
       entityId: result.insertId,
       action: 'create_payment',
-      description: `Guest submitted ${payment_status} payment for reservation ${reservation_id}`
+      description: `Guest submitted pending payment for reservation ${resolvedReservationId}`
     });
 
     await connection.commit();
@@ -575,11 +586,167 @@ async function refundAdminPayment(req, res) {
   }
 }
 
+async function approveAdminPayment(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const paymentId = Number(req.params.id);
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
+      return res.status(400).json({ message: 'Invalid payment id' });
+    }
+
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `
+      SELECT id, reservation_id, payment_status
+      FROM payments
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [paymentId]
+    );
+
+    if (!rows.length) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    const payment = rows[0];
+
+    if (payment.payment_status === 'paid') {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Payment is already marked as paid' });
+    }
+
+    if (payment.payment_status === 'refunded') {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Refunded payments cannot be approved' });
+    }
+
+    await connection.query(
+      `
+      UPDATE payments
+      SET
+        payment_status = 'paid',
+        paid_at = COALESCE(paid_at, NOW()),
+        recorded_by_user_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [req.user?.id || null, paymentId]
+    );
+
+    await updateReservationPaymentSummary(connection, payment.reservation_id);
+
+    await logActivity(connection, {
+      userId: req.user?.id || null,
+      entityType: 'payment',
+      entityId: paymentId,
+      action: 'admin_approve_payment',
+      description: `Admin approved payment ${paymentId} for reservation ${payment.reservation_id}`
+    });
+
+    await connection.commit();
+    res.status(200).json({ message: 'Payment approved successfully' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Failed to approve payment' });
+  } finally {
+    connection.release();
+  }
+}
+
+async function declineAdminPayment(req, res) {
+  const connection = await pool.getConnection();
+
+  try {
+    const paymentId = Number(req.params.id);
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
+      return res.status(400).json({ message: 'Invalid payment id' });
+    }
+
+    const notes = req.body?.notes ? String(req.body.notes).slice(0, 2000) : null;
+
+    await connection.beginTransaction();
+
+    const [rows] = await connection.query(
+      `
+      SELECT id, reservation_id, payment_status
+      FROM payments
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE
+      `,
+      [paymentId]
+    );
+
+    if (!rows.length) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Payment not found' });
+    }
+
+    const payment = rows[0];
+
+    if (payment.payment_status === 'paid') {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Paid payments cannot be declined' });
+    }
+
+    if (payment.payment_status === 'refunded') {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Refunded payments cannot be declined' });
+    }
+
+    if (payment.payment_status !== 'pending') {
+      await connection.rollback();
+      return res.status(400).json({ message: `Only pending payments can be declined (current: ${payment.payment_status})` });
+    }
+
+    await connection.query(
+      `
+      UPDATE payments
+      SET
+        payment_status = 'failed',
+        paid_at = NULL,
+        recorded_by_user_id = ?,
+        notes = COALESCE(?, notes),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      `,
+      [req.user?.id || null, notes, paymentId]
+    );
+
+    await updateReservationPaymentSummary(connection, payment.reservation_id);
+
+    await logActivity(connection, {
+      userId: req.user?.id || null,
+      entityType: 'payment',
+      entityId: paymentId,
+      action: 'admin_decline_payment',
+      description: `Admin declined payment ${paymentId} for reservation ${payment.reservation_id}`
+    });
+
+    await connection.commit();
+    res.status(200).json({ message: 'Payment declined successfully' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Failed to decline payment' });
+  } finally {
+    connection.release();
+  }
+}
+
 module.exports = {
   getPayments,
   getAdminPayments,
   createPayment,
   createAdminPayment,
   handlePaymentWebhook,
+  approveAdminPayment,
+  declineAdminPayment,
   refundAdminPayment
 };

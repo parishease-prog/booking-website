@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const { JWT_SECRET } = require('../middlewares/auth.middleware');
+const { validateEmail, validatePassword } = require('../utils/validation');
+const { recordFailedAttempt, isAccountLocked, getRemainingLockoutTime, clearFailedAttempts } = require('../middlewares/accountLockout.middleware');
 
 function sanitizeUser(user) {
   return {
@@ -20,6 +22,20 @@ async function loginAdmin(req, res) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
+    if (!validateEmail(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+
+    // Check if account is locked
+    if (isAccountLocked(email)) {
+      const remainingSeconds = getRemainingLockoutTime(email);
+      return res.status(429).json({
+        message: `Account is temporarily locked. Try again in ${remainingSeconds} seconds.`,
+        locked: true,
+        lockedUntilSeconds: remainingSeconds
+      });
+    }
+
     const [rows] = await pool.query(
       `
       SELECT id, full_name, email, password_hash, role, is_active
@@ -31,24 +47,31 @@ async function loginAdmin(req, res) {
     );
 
     if (!rows.length) {
+      recordFailedAttempt(email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const user = rows[0];
 
     if (!user.is_active) {
+      recordFailedAttempt(email);
       return res.status(403).json({ message: 'This account is inactive' });
     }
 
     if (user.role !== 'admin') {
+      recordFailedAttempt(email);
       return res.status(403).json({ message: 'Only admin accounts can access this area' });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
+      recordFailedAttempt(email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    // Clear failed attempts on successful login
+    clearFailedAttempts(email);
 
     const token = jwt.sign(
       {
