@@ -105,7 +105,8 @@ app.get('/app/app.js', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Booking API is running' });
+  console.log('[ROOT] GET / called');
+  res.json({ message: 'Booking API is running', timestamp: new Date().toISOString() });
 });
 
 app.use(catalogRoutes);
@@ -153,6 +154,16 @@ app.get('/__routes', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
+
+// Global error handler - catch any unhandled errors
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', err.message);
+  console.error('[ERROR STACK]', err.stack);
+  res.status(500).json({ 
+    error: err.message,
+    code: 'INTERNAL_SERVER_ERROR'
+  });
+});
 
 if (require.main === module) {
   app.listen(PORT, () => {
