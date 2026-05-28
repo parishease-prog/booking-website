@@ -4,7 +4,7 @@
   "description": "Backend for the resort booking website",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node src/server-minimal.js",
     "dev": "node src/server.js",
     "test:integration": "node --test tests/**/*.test.js"
   },
