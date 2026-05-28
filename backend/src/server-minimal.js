@@ -1,6 +1,5 @@
 const express = require('express');
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 console.log('[SERVER] Minimal server starting...');
 
@@ -13,17 +12,14 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-  console.log(`[SERVER] Listening on port ${PORT}`);
-});
+// For local development
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`[SERVER] Listening on port ${PORT}`);
+  });
+}
 
-process.on('error', (err) => {
-  console.error('[SERVER] FATAL ERROR:', err);
-  process.exit(1);
-});
+// Export for Vercel Serverless Functions
+module.exports = app;
 
-process.on('uncaughtException', (err) => {
-  console.error('[SERVER] UNCAUGHT EXCEPTION:', err.message);
-  console.error(err.stack);
-  process.exit(1);
-});
