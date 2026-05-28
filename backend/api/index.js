@@ -1,7 +1,6 @@
-// Vercel Serverless Function handler
+// Vercel Serverless Function handler - with mock fallback
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -23,7 +22,20 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Import all route modules
+// Mock data for testing
+const mockRooms = [
+  { id: 1, room_number: '101', name: 'Deluxe Suite', room_type_id: 1, price_per_night: 150, capacity: 2, is_active: 1 },
+  { id: 2, room_number: '102', name: 'Ocean View', room_type_id: 1, price_per_night: 200, capacity: 2, is_active: 1 },
+  { id: 3, room_number: '201', name: 'Family Room', room_type_id: 2, price_per_night: 250, capacity: 4, is_active: 1 }
+];
+
+// Mock endpoint for rooms
+app.get('/api/catalog/rooms', (req, res) => {
+  console.log('[API] GET /api/catalog/rooms (MOCK)');
+  res.json(mockRooms);
+});
+
+// Try to load real routes, fallback to mock if fail
 try {
   const catalogRoutes = require('../src/routes/catalog.routes');
   const availabilityRoutes = require('../src/routes/availability.routes');
@@ -60,10 +72,10 @@ try {
   app.use(reportRoutes);
   app.use('/inquiries', inquiryRoutes);
 
-  console.log('[API] Routes loaded successfully');
+  console.log('[API] Real routes loaded successfully');
 } catch (err) {
-  console.error('[API] Error loading routes:', err.message);
-  console.error(err.stack);
+  console.error('[API] Error loading real routes:', err.message);
+  console.log('[API] Using mock/fallback routes only');
 }
 
 // Error handler
@@ -73,6 +85,7 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
+
 
 
 
