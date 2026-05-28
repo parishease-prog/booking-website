@@ -70,6 +70,9 @@ async function initializeDatabase() {
     }
   } catch (err) {
     console.error('[DB INIT] ✗ Error:', err.message);
+    console.error('[DB INIT] Full error:', JSON.stringify(err, null, 2));
+    console.error('[DB INIT] Error code:', err.code);
+    console.error('[DB INIT] Error errno:', err.errno);
     return false;
   }
 }
