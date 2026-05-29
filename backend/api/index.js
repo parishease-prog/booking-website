@@ -29,54 +29,51 @@ const mockRooms = [
   { id: 3, room_number: '201', name: 'Family Room', room_type_id: 2, price_per_night: 250, capacity: 4, is_active: 1 }
 ];
 
-// Mock endpoint for rooms
+const mockAmenities = [
+  { id: 1, title: 'Pool Access', description: 'Enjoy our Olympic-sized swimming pool', is_active: 1 },
+  { id: 2, title: 'Spa Services', description: 'Relax with our world-class spa', is_active: 1 },
+  { id: 3, title: 'Restaurant', description: 'Fine dining restaurant on-site', is_active: 1 }
+];
+
+// Mock endpoints for rooms and amenities
 app.get('/api/catalog/rooms', (req, res) => {
   console.log('[API] GET /api/catalog/rooms (MOCK)');
   res.json(mockRooms);
 });
 
+app.get('/api/rooms', (req, res) => {
+  console.log('[API] GET /api/rooms (MOCK)');
+  res.json(mockRooms);
+});
+
+app.get('/rooms', (req, res) => {
+  console.log('[API] GET /rooms (MOCK)');
+  res.json(mockRooms);
+});
+
+app.get('/api/amenities/cards', (req, res) => {
+  console.log('[API] GET /api/amenities/cards (MOCK)');
+  res.json(mockAmenities);
+});
+
+app.get('/amenities/cards', (req, res) => {
+  console.log('[API] GET /amenities/cards (MOCK)');
+  res.json(mockAmenities);
+});
+
 // Try to load real routes, fallback to mock if fail
-try {
-  const catalogRoutes = require('../src/routes/catalog.routes');
-  const availabilityRoutes = require('../src/routes/availability.routes');
-  const guestRoutes = require('../src/routes/guest.routes');
-  const reservationRoutes = require('../src/routes/reservation.routes');
-  const paymentRoutes = require('../src/routes/payment.routes');
-  const requestRoutes = require('../src/routes/request.routes');
-  const adminAuthRoutes = require('../src/routes/adminAuth.routes');
-  const homepageSlideRoutes = require('../src/routes/homepageSlide.routes');
-  const landingContentRoutes = require('../src/routes/landingContent.routes');
-  const amenitiesContentRoutes = require('../src/routes/amenitiesContent.routes');
-  const amenitiesCardRoutes = require('../src/routes/amenitiesCard.routes');
-  const adminRoomRoutes = require('../src/routes/adminRoom.routes');
-  const uploadRoutes = require('../src/routes/upload.routes');
-  const adminOpsRoutes = require('../src/routes/adminOps.routes');
-  const reportRoutes = require('../src/routes/report.routes');
-  const inquiryRoutes = require('../src/routes/inquiry.routes');
+// For now, skip real routes since database isn't accessible from Vercel Serverless
+console.log('[API] Using mock endpoints only (database unavailable from Vercel Serverless)');
 
-  // Use routes
-  app.use(catalogRoutes);
-  app.use(availabilityRoutes);
-  app.use(guestRoutes);
-  app.use(reservationRoutes);
-  app.use(paymentRoutes);
-  app.use('/requests', requestRoutes);
-  app.use(adminAuthRoutes);
-  app.use(homepageSlideRoutes);
-  app.use(landingContentRoutes);
-  app.use(amenitiesContentRoutes);
-  app.use(amenitiesCardRoutes);
-  app.use(adminRoomRoutes);
-  app.use(uploadRoutes);
-  app.use(adminOpsRoutes);
-  app.use(reportRoutes);
-  app.use('/inquiries', inquiryRoutes);
-
-  console.log('[API] Real routes loaded successfully');
-} catch (err) {
-  console.error('[API] Error loading real routes:', err.message);
-  console.log('[API] Using mock/fallback routes only');
-}
+// Catch-all 404 handler
+app.use((req, res) => {
+  console.log('[API] 404 - Route not found:', req.method, req.url);
+  res.status(404).json({ 
+    error: 'Endpoint not found', 
+    path: req.url, 
+    message: 'This endpoint is not available in mock mode. Database connectivity required.'
+  });
+});
 
 // Error handler
 app.use((err, req, res, next) => {
