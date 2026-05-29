@@ -35,30 +35,79 @@ const mockAmenities = [
   { id: 3, title: 'Restaurant', description: 'Fine dining restaurant on-site', is_active: 1 }
 ];
 
-// Mock endpoints for rooms and amenities
-app.get('/api/catalog/rooms', (req, res) => {
-  console.log('[API] GET /api/catalog/rooms (MOCK)');
-  res.json(mockRooms);
-});
+const mockAmenitiesContent = {
+  eyebrow: 'Amenities',
+  title: 'What do we have to offer? A lot.',
+  subtitle: 'World-class service and facilities'
+};
 
+// Mock endpoints for rooms (all variations)
 app.get('/api/rooms', (req, res) => {
   console.log('[API] GET /api/rooms (MOCK)');
   res.json(mockRooms);
 });
 
-app.get('/rooms', (req, res) => {
-  console.log('[API] GET /rooms (MOCK)');
+app.get('/api/catalog/rooms', (req, res) => {
+  console.log('[API] GET /api/catalog/rooms (MOCK)');
   res.json(mockRooms);
 });
 
-app.get('/api/amenities/cards', (req, res) => {
-  console.log('[API] GET /api/amenities/cards (MOCK)');
+// Mock endpoints for amenities (all variations)
+app.get('/api/amenities-cards', (req, res) => {
+  console.log('[API] GET /api/amenities-cards (MOCK)');
   res.json(mockAmenities);
 });
 
-app.get('/amenities/cards', (req, res) => {
-  console.log('[API] GET /amenities/cards (MOCK)');
-  res.json(mockAmenities);
+app.get('/api/amenities-content', (req, res) => {
+  console.log('[API] GET /api/amenities-content (MOCK)');
+  res.json(mockAmenitiesContent);
+});
+
+// Mock admin endpoints
+app.get('/api/admin/amenities-content', (req, res) => {
+  console.log('[API] GET /api/admin/amenities-content (MOCK)');
+  res.json(mockAmenitiesContent);
+});
+
+app.put('/api/admin/amenities-content', (req, res) => {
+  console.log('[API] PUT /api/admin/amenities-content (MOCK)');
+  res.json({ success: true, data: mockAmenitiesContent });
+});
+
+app.get('/api/admin/operations/overview', (req, res) => {
+  console.log('[API] GET /api/admin/operations/overview (MOCK)');
+  res.json({
+    totalReservations: 0,
+    totalRevenue: 0,
+    activeBookings: 0,
+    totalGuests: 0
+  });
+});
+
+app.get('/api/admin/activity-logs', (req, res) => {
+  console.log('[API] GET /api/admin/activity-logs (MOCK)');
+  res.json([]);
+});
+
+// Mock inquiries endpoint
+app.get('/api/inquiries', (req, res) => {
+  console.log('[API] GET /api/inquiries (MOCK)');
+  res.json([]);
+});
+
+app.get('/api/inquiries/:id', (req, res) => {
+  console.log('[API] GET /api/inquiries/:id (MOCK)');
+  res.json({ id: req.params.id, message: 'Mock inquiry' });
+});
+
+app.delete('/api/inquiries/:id', (req, res) => {
+  console.log('[API] DELETE /api/inquiries/:id (MOCK)');
+  res.json({ success: true });
+});
+
+app.patch('/api/inquiries/:id', (req, res) => {
+  console.log('[API] PATCH /api/inquiries/:id (MOCK)');
+  res.json({ success: true });
 });
 
 // Try to load real routes, fallback to mock if fail
