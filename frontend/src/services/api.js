@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'https://booking-backend-umber.vercel.app/api';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://booking-app-standalone.vercel.app/api';
 
 let csrfToken = sessionStorage.getItem('csrfToken') || '';
 const CSRF_HEADER = 'X-CSRF-Token';
