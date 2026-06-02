@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import MessageBox from '../components/MessageBox.jsx';
-import { apiPost } from '../services/api.js';
+import { apiPost, apiGet } from '../services/api.js';
 import { setAdminSession } from '../utils/adminSession.js';
 
 function AdminLoginPage() {
@@ -10,6 +10,20 @@ function AdminLoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [message, setMessage] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch CSRF token on page load
+  useEffect(() => {
+    (async () => {
+      try {
+        // Make a GET request to fetch the CSRF token from response headers
+        await apiGet('/').catch(() => {
+          // Error is expected (auth required), we just need the token from headers
+        });
+      } catch (err) {
+        // Silently ignore errors; we're just fetching the token
+      }
+    })();
+  }, []);
 
   function handleChange(event) {
     const { name, value } = event.target;
