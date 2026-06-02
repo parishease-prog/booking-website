@@ -5,6 +5,8 @@ require('dotenv').config();
 
 const app = express();
 
+// Capture any require-time error when loading real routes so we can surface it
+let realRoutesErrorStack = null;
 console.log('[API] Handler initialized');
 
 // Middleware
@@ -12,9 +14,76 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Import real routes
+try {
+  const adminAuthRoutes = require('../src/routes/adminAuth.routes');
+  const catalogRoutes = require('../src/routes/catalog.routes');
+  const availabilityRoutes = require('../src/routes/availability.routes');
+  const guestRoutes = require('../src/routes/guest.routes');
+  const reservationRoutes = require('../src/routes/reservation.routes');
+  const paymentRoutes = require('../src/routes/payment.routes');
+  const requestRoutes = require('../src/routes/request.routes');
+  const homepageSlideRoutes = require('../src/routes/homepageSlide.routes');
+  const landingContentRoutes = require('../src/routes/landingContent.routes');
+  const amenitiesContentRoutes = require('../src/routes/amenitiesContent.routes');
+  const amenitiesCardRoutes = require('../src/routes/amenitiesCard.routes');
+  const adminRoomRoutes = require('../src/routes/adminRoom.routes');
+  const uploadRoutes = require('../src/routes/upload.routes');
+  const adminOpsRoutes = require('../src/routes/adminOps.routes');
+  const reportRoutes = require('../src/routes/report.routes');
+  const inquiryRoutes = require('../src/routes/inquiry.routes');
+  
+  // Import security middleware
+  const { attachCSRFToken, validateCSRFToken } = require('../src/middlewares/csrf.middleware');
+  
+  // Apply security middleware
+  app.use(attachCSRFToken);
+  app.use(validateCSRFToken);
+  
+  // Security headers middleware
+  app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+  
+  // Register real routes
+  app.use(adminAuthRoutes);
+  app.use(catalogRoutes);
+  app.use(availabilityRoutes);
+  app.use(guestRoutes);
+  app.use(reservationRoutes);
+  app.use(paymentRoutes);
+  app.use(requestRoutes);
+  app.use(homepageSlideRoutes);
+  app.use(landingContentRoutes);
+  app.use(amenitiesContentRoutes);
+  app.use(amenitiesCardRoutes);
+  app.use(adminRoomRoutes);
+  app.use(uploadRoutes);
+  app.use(adminOpsRoutes);
+  app.use(reportRoutes);
+  app.use(inquiryRoutes);
+  
+  console.log('[API] Real database routes loaded successfully');
+} catch (err) {
+  console.error('[API] Failed to load real routes:', err.message);
+  console.error('[API] Real routes load stack:', err.stack || err);
+  realRoutesErrorStack = err.stack || String(err);
+  console.log('[API] Falling back to mock endpoints only');
+}
+
 // Basic routes
 app.get('/', (req, res) => {
   console.log('[API] GET / called');
+  // If requested, return the real-routes load stack for debugging (safe when SHOW_STACK=1)
+  const showStack = req.query.showStack === '1' || process.env.SHOW_STACK === '1';
+  if (showStack && realRoutesErrorStack) {
+    return res.status(500).json({ error: 'Real routes failed to load', stack: realRoutesErrorStack });
+  }
+
   res.json({ message: 'Booking Backend API is working!', timestamp: new Date().toISOString() });
 });
 
@@ -110,17 +179,13 @@ app.patch('/api/inquiries/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// Try to load real routes, fallback to mock if fail
-// For now, skip real routes since database isn't accessible from Vercel Serverless
-console.log('[API] Using mock endpoints only (database unavailable from Vercel Serverless)');
-
 // Catch-all 404 handler
 app.use((req, res) => {
   console.log('[API] 404 - Route not found:', req.method, req.url);
   res.status(404).json({ 
     error: 'Endpoint not found', 
     path: req.url, 
-    message: 'This endpoint is not available in mock mode. Database connectivity required.'
+    message: 'This endpoint does not exist. Please check the API documentation.'
   });
 });
 
