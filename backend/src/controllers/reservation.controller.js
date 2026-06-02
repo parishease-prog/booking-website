@@ -32,7 +32,7 @@ function normalizeSqlDate(value) {
 
 async function getReservations(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         r.id,
@@ -46,14 +46,14 @@ async function getReservations(req, res) {
         r.total_amount,
         r.amount_paid,
         r.balance_due,
-        CONCAT(g.first_name, ' ', g.last_name) AS guest_name,
+        g.first_name || ' ' || g.last_name AS guest_name,
         g.email AS guest_email
       FROM reservations r
       JOIN guests g ON g.id = r.guest_id
       ORDER BY r.created_at DESC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch reservations' });
@@ -64,7 +64,7 @@ async function getReservationById(req, res) {
   try {
     const reservation = await fetchReservationDetails(
       pool,
-      'r.id = ?',
+      'r.id = $1',
       [req.params.id]
     );
 
@@ -83,7 +83,7 @@ async function getReservationByCode(req, res) {
   try {
     const reservation = await fetchReservationDetails(
       pool,
-      'r.reservation_code = ?',
+      'r.reservation_code = $1',
       [req.params.code]
     );
 
@@ -99,7 +99,7 @@ async function getReservationByCode(req, res) {
 }
 
 async function createReservation(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const {
@@ -146,67 +146,68 @@ async function createReservation(req, res) {
       return res.status(400).json({ message: dateError });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    await expireStaleHolds(connection);
+    await expireStaleHolds(pool);
 
     if (hold_token) {
-      const [holdRows] = await connection.query(
+      const holdResult = await client.query(
         `
         SELECT
           id,
           hold_token,
           status,
-          DATE_FORMAT(check_in_date, '%Y-%m-%d') AS check_in_date,
-          DATE_FORMAT(check_out_date, '%Y-%m-%d') AS check_out_date,
+          check_in_date::text,
+          check_out_date::text,
           expires_at
         FROM reservation_holds
-        WHERE hold_token = ?
+        WHERE hold_token = $1
         LIMIT 1
-        FOR UPDATE
         `,
         [hold_token]
       );
+      const holdRows = holdResult.rows;
 
       if (!holdRows.length) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         return res.status(404).json({ message: 'Hold not found' });
       }
 
       const hold = holdRows[0];
 
       if (hold.status !== 'active' || new Date(hold.expires_at) <= new Date()) {
-        await connection.query(
+        await client.query(
           `
           UPDATE reservation_holds
           SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND status = 'active'
+          WHERE id = $1 AND status = 'active'
           `,
           [hold.id]
         );
-        await connection.rollback();
+        await client.query('ROLLBACK');
         return res.status(400).json({ message: 'Hold has expired. Please re-check availability.' });
       }
 
       if (hold.check_in_date !== check_in_date || hold.check_out_date !== check_out_date) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         return res.status(400).json({ message: 'Hold dates do not match the reservation dates' });
       }
 
-      const [holdRoomRows] = await connection.query(
+      const holdRoomResult = await client.query(
         `
         SELECT room_id
         FROM reservation_hold_rooms
-        WHERE hold_id = ?
+        WHERE hold_id = $1
         ORDER BY room_id ASC
         `,
         [hold.id]
       );
+      const holdRoomRows = holdRoomResult.rows;
 
       const heldRoomIds = holdRoomRows.map((row) => Number(row.room_id));
 
       if (!heldRoomIds.length) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         return res.status(400).json({ message: 'Hold has no rooms assigned' });
       }
 
@@ -214,7 +215,7 @@ async function createReservation(req, res) {
         const requested = [...normalizedRoomIds].sort((a, b) => a - b).join(',');
         const held = [...heldRoomIds].sort((a, b) => a - b).join(',');
         if (requested !== held) {
-          await connection.rollback();
+          await client.query('ROLLBACK');
           return res.status(400).json({ message: 'Selected rooms do not match held rooms' });
         }
       }
@@ -223,21 +224,21 @@ async function createReservation(req, res) {
     }
 
     if (!normalizedRoomIds.length) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'At least one room must be selected' });
     }
 
-    await connection.query(
+    const placeholders = normalizedRoomIds.map((_, i) => `$${i + 1}`).join(',');
+    await client.query(
       `
       SELECT id
       FROM rooms
-      WHERE id IN (${normalizedRoomIds.map(() => '?').join(',')})
-      FOR UPDATE
+      WHERE id IN (${placeholders})
       `,
       normalizedRoomIds
     );
 
-    const [availableRooms] = await getAvailableRoomsQuery(connection, {
+    const [availableRooms] = await getAvailableRoomsQuery(client, {
       checkInDate: check_in_date,
       checkOutDate: check_out_date,
       roomIds: normalizedRoomIds,
@@ -245,7 +246,7 @@ async function createReservation(req, res) {
     });
 
     if (availableRooms.length !== normalizedRoomIds.length) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({
         message: 'One or more selected rooms are not available',
         requested_room_ids: normalizedRoomIds,
@@ -262,43 +263,45 @@ async function createReservation(req, res) {
         room.max_capacity
       );
       if (occupancyError) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         return res.status(400).json({ message: occupancyError });
       }
     }
 
     let guestId;
 
-    const [existingGuests] = await connection.query(
-      'SELECT id FROM guests WHERE email = ? LIMIT 1',
+    const existingGuestsResult = await client.query(
+      'SELECT id FROM guests WHERE email = $1 LIMIT 1',
       [email]
     );
+    const existingGuests = existingGuestsResult.rows;
 
     if (existingGuests.length > 0) {
       guestId = existingGuests[0].id;
 
-      await connection.query(
+      await client.query(
         `
         UPDATE guests
         SET
-          first_name = ?,
-          last_name = ?,
-          phone = ?,
+          first_name = $1,
+          last_name = $2,
+          phone = $3,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+        WHERE id = $4
         `,
         [first_name, last_name, phone || null, guestId]
       );
     } else {
-      const [guestResult] = await connection.query(
+      const guestResult = await client.query(
         `
         INSERT INTO guests (first_name, last_name, email, phone)
-        VALUES (?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
         `,
         [first_name, last_name, email, phone || null]
       );
 
-      guestId = guestResult.insertId;
+      guestId = guestResult.rows[0].id;
     }
 
     const nights = calculateNights(check_in_date, check_out_date);
@@ -310,7 +313,7 @@ async function createReservation(req, res) {
     const bookingScope =
       normalizedRoomIds.length === 1 ? 'single_room' : 'multi_room';
 
-    const [reservationResult] = await connection.query(
+    const reservationResult = await client.query(
       `
       INSERT INTO reservations (
         reservation_code,
@@ -330,7 +333,8 @@ async function createReservation(req, res) {
         amount_paid,
         balance_due
       )
-      VALUES (?, ?, ?, 'online', 'advance', ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, 0, ?)
+      VALUES ($1, $2, $3, 'online', 'advance', $4, $5, $6, $7, $8, 'pending', 'pending', $9, $10, 0, $11)
+      RETURNING id
       `,
       [
         reservationCode,
@@ -347,14 +351,14 @@ async function createReservation(req, res) {
       ]
     );
 
-    const reservationId = reservationResult.insertId;
+    const reservationId = reservationResult.rows[0].id;
 
     if (hold_token) {
-      await connection.query(
+      await client.query(
         `
         UPDATE reservation_holds
-        SET status = 'converted', reservation_id = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE hold_token = ?
+        SET status = 'converted', reservation_id = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE hold_token = $2
         `,
         [reservationId, hold_token]
       );
@@ -363,7 +367,7 @@ async function createReservation(req, res) {
     for (const room of availableRooms) {
       const lineTotal = Number(room.effective_price) * nights;
 
-      await connection.query(
+      await client.query(
         `
         INSERT INTO reservation_rooms (
           reservation_id,
@@ -378,7 +382,7 @@ async function createReservation(req, res) {
           check_in_date,
           check_out_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'reserved', ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, 0, $7, 'reserved', $8, $9)
         `,
         [
           reservationId,
@@ -394,7 +398,7 @@ async function createReservation(req, res) {
       );
     }
 
-    await connection.query(
+    await client.query(
       `
       INSERT INTO reservation_status_history (
         reservation_id,
@@ -402,12 +406,12 @@ async function createReservation(req, res) {
         new_status,
         notes
       )
-      VALUES (?, NULL, 'pending', 'Reservation created')
+      VALUES ($1, NULL, 'pending', 'Reservation created')
       `,
       [reservationId]
     );
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: null,
       entityType: 'reservation',
       entityId: reservationId,
@@ -415,7 +419,7 @@ async function createReservation(req, res) {
       description: `Reservation ${reservationCode} created via online booking`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Reservation created successfully',
@@ -423,19 +427,19 @@ async function createReservation(req, res) {
       reservation_id: reservationId
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({
       message: 'Failed to create reservation',
       error: error.message
     });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function createReservationHold(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const {
@@ -456,27 +460,29 @@ async function createReservationHold(req, res) {
       return res.status(400).json({ message: 'room_ids must include at least one room' });
     }
 
-    await connection.beginTransaction();
-    await expireStaleHolds(connection);
+    await client.query('BEGIN');
+    await expireStaleHolds(client);
 
-    await connection.query(
+    const placeholders = normalizedRoomIds.map((_, i) => `$${i + 1}`).join(',');
+    await client.query(
       `
       SELECT id
       FROM rooms
-      WHERE id IN (${normalizedRoomIds.map(() => '?').join(',')})
+      WHERE id IN (${placeholders})
       FOR UPDATE
       `,
       normalizedRoomIds
     );
 
-    const [availableRooms] = await getAvailableRoomsQuery(connection, {
+    const availableRoomsResult = await getAvailableRoomsQuery(client, {
       checkInDate: check_in_date,
       checkOutDate: check_out_date,
       roomIds: normalizedRoomIds
     });
+    const availableRooms = Array.isArray(availableRoomsResult) ? availableRoomsResult : availableRoomsResult[0] || [];
 
     if (availableRooms.length !== normalizedRoomIds.length) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(409).json({
         message: 'One or more selected rooms are no longer available',
         requested_room_ids: normalizedRoomIds,
@@ -486,7 +492,7 @@ async function createReservationHold(req, res) {
 
     const holdToken = generateHoldToken();
 
-    const [holdResult] = await connection.query(
+    const holdResult = await client.query(
       `
       INSERT INTO reservation_holds (
         hold_token,
@@ -496,27 +502,30 @@ async function createReservationHold(req, res) {
         expires_at,
         status
       )
-      VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE), 'active')
+      VALUES ($1, $2, $3, $4, NOW() + INTERVAL '${BOOKING_HOLD_MINUTES} minutes', 'active')
+      RETURNING id
       `,
-      [holdToken, guest_email || null, check_in_date, check_out_date, BOOKING_HOLD_MINUTES]
+      [holdToken, guest_email || null, check_in_date, check_out_date]
     );
+    const holdId = holdResult.rows[0].id;
 
     for (const roomId of normalizedRoomIds) {
-      await connection.query(
+      await client.query(
         `
         INSERT INTO reservation_hold_rooms (hold_id, room_id)
-        VALUES (?, ?)
+        VALUES ($1, $2)
         `,
-        [holdResult.insertId, roomId]
+        [holdId, roomId]
       );
     }
 
-    const [holdRows] = await connection.query(
-      'SELECT hold_token, expires_at, check_in_date, check_out_date FROM reservation_holds WHERE id = ? LIMIT 1',
-      [holdResult.insertId]
+    const holdRows_result = await client.query(
+      'SELECT hold_token, expires_at, check_in_date, check_out_date FROM reservation_holds WHERE id = $1 LIMIT 1',
+      [holdId]
     );
+    const holdRows = holdRows_result.rows;
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Hold created successfully',
@@ -524,11 +533,11 @@ async function createReservationHold(req, res) {
       room_ids: normalizedRoomIds
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to create reservation hold' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
@@ -538,31 +547,33 @@ async function getReservationHold(req, res) {
   try {
     await expireStaleHolds(pool);
 
-    const [holds] = await pool.query(
+    const holds_result = await pool.query(
       `
       SELECT hold_token, guest_email, check_in_date, check_out_date, expires_at, status
       FROM reservation_holds
-      WHERE hold_token = ?
+      WHERE hold_token = $1
       LIMIT 1
       `,
       [token]
     );
+    const holds = holds_result.rows;
 
     if (!holds.length) {
       return res.status(404).json({ message: 'Hold not found' });
     }
 
     const hold = holds[0];
-    const [rooms] = await pool.query(
+    const rooms_result = await pool.query(
       `
       SELECT room_id
       FROM reservation_hold_rooms hrr
       JOIN reservation_holds rh ON rh.id = hrr.hold_id
-      WHERE rh.hold_token = ?
+      WHERE rh.hold_token = $1
       ORDER BY room_id ASC
       `,
       [token]
     );
+    const rooms = rooms_result.rows;
 
     res.json({
       ...hold,
@@ -576,16 +587,16 @@ async function getReservationHold(req, res) {
 
 async function releaseReservationHold(req, res) {
   try {
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       UPDATE reservation_holds
       SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-      WHERE hold_token = ? AND status = 'active'
+      WHERE hold_token = $1 AND status = 'active'
       `,
       [req.params.token]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Active hold not found' });
     }
 
@@ -604,7 +615,7 @@ async function getMyBookings(req, res) {
       return res.status(400).json({ message: 'email is required' });
     }
 
-    const [rows] = await pool.query(
+    const rows_result = await pool.query(
       `
       SELECT
         r.id,
@@ -620,11 +631,12 @@ async function getMyBookings(req, res) {
         r.created_at
       FROM reservations r
       JOIN guests g ON g.id = r.guest_id
-      WHERE g.email = ?
+      WHERE g.email = $1
       ORDER BY r.created_at DESC
       `,
       [email]
     );
+    const rows = rows_result.rows;
 
     res.json(rows);
   } catch (error) {
@@ -634,7 +646,7 @@ async function getMyBookings(req, res) {
 }
 
 async function cancelMyBooking(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { reservation_code, email, reason } = req.body;
@@ -643,9 +655,9 @@ async function cancelMyBooking(req, res) {
       return res.status(400).json({ message: 'reservation_code, email, and reason are required' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [rows] = await connection.query(
+    const rows_result = await client.query(
       `
       SELECT
         r.id,
@@ -654,15 +666,16 @@ async function cancelMyBooking(req, res) {
         r.check_in_date
       FROM reservations r
       JOIN guests g ON g.id = r.guest_id
-      WHERE r.reservation_code = ? AND g.email = ?
+      WHERE r.reservation_code = $1 AND g.email = $2
       LIMIT 1
       FOR UPDATE
       `,
       [reservation_code, email]
     );
+    const rows = rows_result.rows;
 
     if (!rows.length) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Reservation not found for this email' });
     }
 
@@ -670,7 +683,7 @@ async function cancelMyBooking(req, res) {
     const currentStatus = reservation.reservation_status;
 
     if (['cancelled', 'checked_in', 'checked_out', 'no_show'].includes(currentStatus)) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: `Cannot cancel a ${currentStatus} reservation` });
     }
 
@@ -679,26 +692,26 @@ async function cancelMyBooking(req, res) {
       (1000 * 60 * 60);
 
     if (hoursUntilCheckIn < CANCELLATION_MIN_HOURS) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({
         message: `Cancellations are only allowed at least ${CANCELLATION_MIN_HOURS} hours before check-in`
       });
     }
 
-    await connection.query(
+    await client.query(
       `
       UPDATE reservations
       SET
         reservation_status = 'cancelled',
         cancelled_at = NOW(),
-        cancellation_reason = ?,
+        cancellation_reason = $1,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $2
       `,
       [reason, reservation.id]
     );
 
-    await connection.query(
+    await client.query(
       `
       INSERT INTO reservation_status_history (
         reservation_id,
@@ -706,12 +719,12 @@ async function cancelMyBooking(req, res) {
         new_status,
         notes
       )
-      VALUES (?, ?, 'cancelled', ?)
+      VALUES ($1, $2, 'cancelled', $3)
       `,
       [reservation.id, currentStatus, `Guest self-service cancellation: ${reason}`]
     );
 
-    await connection.query(
+    await client.query(
       `
       INSERT INTO cancellation_requests (
         reservation_id,
@@ -721,12 +734,12 @@ async function cancelMyBooking(req, res) {
         reviewed_at,
         review_notes
       )
-      VALUES (?, 'guest', ?, 'completed', NOW(), 'Auto-approved by policy-safe self-service cancellation')
+      VALUES ($1, 'guest', $2, 'completed', NOW(), 'Auto-approved by policy-safe self-service cancellation')
       `,
       [reservation.id, reason]
     );
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: null,
       entityType: 'reservation',
       entityId: reservation.id,
@@ -734,14 +747,14 @@ async function cancelMyBooking(req, res) {
       description: `Guest cancelled reservation ${reservation.reservation_code}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
     res.json({ message: 'Reservation cancelled successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to cancel booking' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
@@ -803,7 +816,7 @@ async function getMyBookingReceipt(req, res) {
 }
 
 async function updateReservationStatus(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { status, notes, changed_by_user_id } = req.body;
@@ -820,15 +833,16 @@ async function updateReservationStatus(req, res) {
       return res.status(400).json({ message: error.message });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [currentRows] = await connection.query(
-      'SELECT reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = ? LIMIT 1',
+    const currentRows_result = await client.query(
+      'SELECT reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = $1 LIMIT 1',
       [req.params.id]
     );
+    const currentRows = currentRows_result.rows;
 
     if (currentRows.length === 0) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Reservation not found' });
     }
 
@@ -836,28 +850,30 @@ async function updateReservationStatus(req, res) {
     const currentReservationCode = currentRows[0].reservation_code;
     const existingConfirmationCode = currentRows[0].confirmation_code;
 
-    await connection.query(
+    const confirmationCode = status === 'confirmed'
+      ? (existingConfirmationCode || generateConfirmationCode(currentReservationCode))
+      : null;
+
+    await client.query(
       `
       UPDATE reservations
       SET
-        reservation_status = ?,
+        reservation_status = $1,
         confirmation_code = CASE
-          WHEN ? = 'confirmed' THEN COALESCE(confirmation_code, ?)
+          WHEN $2 = 'confirmed' THEN COALESCE(confirmation_code, $3)
           ELSE confirmation_code
         END,
-        checked_in_at = CASE WHEN ? = 'checked_in' THEN NOW() ELSE checked_in_at END,
-        checked_out_at = CASE WHEN ? = 'checked_out' THEN NOW() ELSE checked_out_at END,
-        cancelled_at = CASE WHEN ? = 'cancelled' THEN NOW() ELSE cancelled_at END,
-        cancellation_reason = CASE WHEN ? = 'cancelled' THEN ? ELSE cancellation_reason END,
+        checked_in_at = CASE WHEN $4 = 'checked_in' THEN NOW() ELSE checked_in_at END,
+        checked_out_at = CASE WHEN $5 = 'checked_out' THEN NOW() ELSE checked_out_at END,
+        cancelled_at = CASE WHEN $6 = 'cancelled' THEN NOW() ELSE cancelled_at END,
+        cancellation_reason = CASE WHEN $7 = 'cancelled' THEN $8 ELSE cancellation_reason END,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $9
       `,
       [
         status,
         status,
-        status === 'confirmed'
-          ? (existingConfirmationCode || generateConfirmationCode(currentReservationCode))
-          : null,
+        confirmationCode,
         status,
         status,
         status,
@@ -867,7 +883,7 @@ async function updateReservationStatus(req, res) {
       ]
     );
 
-    await connection.query(
+    await client.query(
       `
       INSERT INTO reservation_status_history (
         reservation_id,
@@ -876,12 +892,12 @@ async function updateReservationStatus(req, res) {
         changed_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5)
       `,
       [req.params.id, oldStatus, status, effectiveChangedBy, notes || null]
     );
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: effectiveChangedBy,
       entityType: 'reservation',
       entityId: Number(req.params.id),
@@ -889,50 +905,51 @@ async function updateReservationStatus(req, res) {
       description: `Reservation status changed from ${oldStatus} to ${status}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.json({ message: 'Reservation status updated successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to update reservation status' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function confirmReservationManually(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { notes } = req.body || {};
     const reservationId = Number(req.params.id);
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [rows] = await connection.query(
-      'SELECT reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = ? LIMIT 1 FOR UPDATE',
+    const rows_result = await client.query(
+      'SELECT reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = $1 LIMIT 1 FOR UPDATE',
       [reservationId]
     );
+    const rows = rows_result.rows;
 
     if (!rows.length) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Reservation not found' });
     }
 
     const current = rows[0];
     const confirmationCode = current.confirmation_code || generateConfirmationCode(current.reservation_code);
 
-    await connection.query(
+    await client.query(
       `
       UPDATE reservations
-      SET reservation_status = 'confirmed', confirmation_code = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      SET reservation_status = 'confirmed', confirmation_code = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
       `,
       [confirmationCode, reservationId]
     );
 
-    await connection.query(
+    await client.query(
       `
       INSERT INTO reservation_status_history (
         reservation_id,
@@ -941,12 +958,12 @@ async function confirmReservationManually(req, res) {
         changed_by_user_id,
         notes
       )
-      VALUES (?, ?, 'confirmed', ?, ?)
+      VALUES ($1, $2, 'confirmed', $3, $4)
       `,
       [reservationId, current.reservation_status, req.user?.id || null, notes || 'Manual confirmation by admin']
     );
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: req.user?.id || null,
       entityType: 'reservation',
       entityId: reservationId,
@@ -954,14 +971,14 @@ async function confirmReservationManually(req, res) {
       description: `Reservation manually confirmed with reference ${confirmationCode}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
     res.json({ message: 'Reservation confirmed', confirmation_code: confirmationCode });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to confirm reservation' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
@@ -979,7 +996,7 @@ async function getMyBookingsList(req, res) {
       return res.status(400).json({ message: 'email cannot be empty' });
     }
 
-    const [rows] = await pool.query(
+    const rows_result = await pool.query(
       `
       SELECT
         r.id,
@@ -995,11 +1012,12 @@ async function getMyBookingsList(req, res) {
         r.created_at
       FROM reservations r
       JOIN guests g ON g.id = r.guest_id
-      WHERE g.email = ?
+      WHERE g.email = $1
       ORDER BY r.created_at DESC
       `,
       [trimmedEmail]
     );
+    const rows = rows_result.rows;
 
     res.json(rows);
   } catch (error) {

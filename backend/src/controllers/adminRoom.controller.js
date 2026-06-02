@@ -3,10 +3,10 @@ const { validateUrl, validateText } = require('../utils/validation');
 
 async function getAdminRoomTypes(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       'SELECT * FROM room_types ORDER BY name ASC'
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to load room types' });
@@ -54,10 +54,11 @@ async function createRoomType(req, res) {
       return res.status(400).json({ message: 'extra_guest_fee must be a non-negative number up to 100,000' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO room_types (name, description, base_capacity, max_capacity, base_price, extra_guest_fee)
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
       `,
       [
         name,
@@ -69,11 +70,11 @@ async function createRoomType(req, res) {
       ]
     );
 
-    const [rows] = await pool.query('SELECT * FROM room_types WHERE id = ? LIMIT 1', [result.insertId]);
-    res.status(201).json(rows[0]);
+    const fetchResult = await pool.query('SELECT * FROM room_types WHERE id = $1 LIMIT 1', [result.rows[0].id]);
+    res.status(201).json(fetchResult.rows[0]);
   } catch (error) {
     console.error(error);
-    if (error?.code === 'ER_DUP_ENTRY') {
+    if (error?.code === '23505') {
       return res.status(409).json({ message: 'Room type name already exists' });
     }
     res.status(500).json({ message: 'Failed to create room type' });
@@ -122,18 +123,18 @@ async function updateRoomType(req, res) {
       return res.status(400).json({ message: 'extra_guest_fee must be a non-negative number up to 100,000' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       UPDATE room_types
       SET
-        name = ?,
-        description = ?,
-        base_capacity = ?,
-        max_capacity = ?,
-        base_price = ?,
-        extra_guest_fee = ?,
+        name = $1,
+        description = $2,
+        base_capacity = $3,
+        max_capacity = $4,
+        base_price = $5,
+        extra_guest_fee = $6,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $7
       `,
       [
         name,
@@ -146,15 +147,15 @@ async function updateRoomType(req, res) {
       ]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Room type not found' });
     }
 
-    const [rows] = await pool.query('SELECT * FROM room_types WHERE id = ? LIMIT 1', [id]);
-    res.json(rows[0]);
+    const fetchResult = await pool.query('SELECT * FROM room_types WHERE id = $1 LIMIT 1', [id]);
+    res.json(fetchResult.rows[0]);
   } catch (error) {
     console.error(error);
-    if (error?.code === 'ER_DUP_ENTRY') {
+    if (error?.code === '23505') {
       return res.status(409).json({ message: 'Room type name already exists' });
     }
     res.status(500).json({ message: 'Failed to update room type' });
@@ -166,24 +167,25 @@ async function deleteRoomType(req, res) {
     const { id } = req.params;
 
     // Check if any rooms use this room type
-    const [rooms] = await pool.query(
-      'SELECT COUNT(*) as count FROM rooms WHERE room_type_id = ?',
+    const countResult = await pool.query(
+      'SELECT COUNT(*) as count FROM rooms WHERE room_type_id = $1',
       [id]
     );
+    const count = parseInt(countResult.rows[0].count, 10);
 
-    if (rooms[0].count > 0) {
+    if (count > 0) {
       return res.status(409).json({
-        message: `Cannot delete room type. ${rooms[0].count} room(s) are using this type.`
+        message: `Cannot delete room type. ${count} room(s) are using this type.`
       });
     }
 
     // Delete the room type
-    const [result] = await pool.query(
-      'DELETE FROM room_types WHERE id = ?',
+    const result = await pool.query(
+      'DELETE FROM room_types WHERE id = $1',
       [id]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Room type not found' });
     }
 
@@ -201,13 +203,13 @@ async function getAdminRooms(req, res) {
     const where = [];
 
     if (room_type_id) {
-      where.push('r.room_type_id = ?');
+      where.push('r.room_type_id = $1');
       params.push(Number(room_type_id));
     }
 
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         r.*,
@@ -223,7 +225,7 @@ async function getAdminRooms(req, res) {
       params
     );
 
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to load rooms' });
@@ -249,7 +251,7 @@ async function createRoom(req, res) {
       return res.status(400).json({ message: 'room_type_id, room_number, and room_name are required' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO rooms (
         room_type_id,
@@ -263,7 +265,8 @@ async function createRoom(req, res) {
         is_featured,
         is_active
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id
       `,
       [
         Number(room_type_id),
@@ -279,7 +282,7 @@ async function createRoom(req, res) {
       ]
     );
 
-    const [rows] = await pool.query(
+    const fetchResult = await pool.query(
       `
       SELECT
         r.*,
@@ -289,16 +292,16 @@ async function createRoom(req, res) {
         COALESCE(r.price_override, rt.base_price) AS effective_price
       FROM rooms r
       JOIN room_types rt ON rt.id = r.room_type_id
-      WHERE r.id = ?
+      WHERE r.id = $1
       LIMIT 1
       `,
-      [result.insertId]
+      [result.rows[0].id]
     );
 
-    res.status(201).json(rows[0]);
+    res.status(201).json(fetchResult.rows[0]);
   } catch (error) {
     console.error(error);
-    if (error?.code === 'ER_DUP_ENTRY') {
+    if (error?.code === '23505') {
       return res.status(409).json({ message: 'Room number already exists' });
     }
     res.status(500).json({ message: 'Failed to create room' });
@@ -325,22 +328,22 @@ async function updateRoom(req, res) {
       return res.status(400).json({ message: 'room_type_id, room_number, and room_name are required' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       UPDATE rooms
       SET
-        room_type_id = ?,
-        room_number = ?,
-        room_name = ?,
-        description = ?,
-        floor_label = ?,
-        max_guests_override = ?,
-        price_override = ?,
-        status = ?,
-        is_featured = ?,
-        is_active = ?,
+        room_type_id = $1,
+        room_number = $2,
+        room_name = $3,
+        description = $4,
+        floor_label = $5,
+        max_guests_override = $6,
+        price_override = $7,
+        status = $8,
+        is_featured = $9,
+        is_active = $10,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $11
       `,
       [
         Number(room_type_id),
@@ -357,11 +360,11 @@ async function updateRoom(req, res) {
       ]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Room not found' });
     }
 
-    const [rows] = await pool.query(
+    const fetchResult = await pool.query(
       `
       SELECT
         r.*,
@@ -371,16 +374,16 @@ async function updateRoom(req, res) {
         COALESCE(r.price_override, rt.base_price) AS effective_price
       FROM rooms r
       JOIN room_types rt ON rt.id = r.room_type_id
-      WHERE r.id = ?
+      WHERE r.id = $1
       LIMIT 1
       `,
       [id]
     );
 
-    res.json(rows[0]);
+    res.json(fetchResult.rows[0]);
   } catch (error) {
     console.error(error);
-    if (error?.code === 'ER_DUP_ENTRY') {
+    if (error?.code === '23505') {
       return res.status(409).json({ message: 'Room number already exists' });
     }
     res.status(500).json({ message: 'Failed to update room' });
@@ -390,16 +393,16 @@ async function updateRoom(req, res) {
 async function getRoomImages(req, res) {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT *
       FROM room_images
-      WHERE room_id = ?
+      WHERE room_id = $1
       ORDER BY is_primary DESC, sort_order ASC, id ASC
       `,
       [id]
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to load room images' });
@@ -407,7 +410,7 @@ async function getRoomImages(req, res) {
 }
 
 async function addRoomImage(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { id } = req.params;
@@ -427,19 +430,20 @@ async function addRoomImage(req, res) {
       return res.status(400).json({ message: 'Invalid image URL format' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
     if (is_primary) {
-      await connection.query(
-        'UPDATE room_images SET is_primary = 0 WHERE room_id = ?',
+      await client.query(
+        'UPDATE room_images SET is_primary = 0 WHERE room_id = $1',
         [id]
       );
     }
 
-    const [result] = await connection.query(
+    const result = await client.query(
       `
       INSERT INTO room_images (room_id, image_url, alt_text, sort_order, is_primary)
-      VALUES (?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
       `,
       [
         Number(id),
@@ -450,32 +454,32 @@ async function addRoomImage(req, res) {
       ]
     );
 
-    await connection.commit();
+    await client.query('COMMIT');
 
-    const [rows] = await pool.query(
-      'SELECT * FROM room_images WHERE id = ? LIMIT 1',
-      [result.insertId]
+    const fetchResult = await pool.query(
+      'SELECT * FROM room_images WHERE id = $1 LIMIT 1',
+      [result.rows[0].id]
     );
 
-    res.status(201).json(rows[0]);
+    res.status(201).json(fetchResult.rows[0]);
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to add room image' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function deleteRoomImage(req, res) {
   try {
     const { imageId } = req.params;
-    const [result] = await pool.query(
-      'DELETE FROM room_images WHERE id = ?',
+    const result = await pool.query(
+      'DELETE FROM room_images WHERE id = $1',
       [imageId]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Room image not found' });
     }
 
@@ -487,42 +491,42 @@ async function deleteRoomImage(req, res) {
 }
 
 async function setPrimaryRoomImage(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { id, imageId } = req.params;
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [rows] = await connection.query(
-      'SELECT id FROM room_images WHERE id = ? AND room_id = ? LIMIT 1',
+    const result = await client.query(
+      'SELECT id FROM room_images WHERE id = $1 AND room_id = $2 LIMIT 1',
       [imageId, id]
     );
 
-    if (!rows.length) {
-      await connection.rollback();
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Room image not found' });
     }
 
-    await connection.query(
-      'UPDATE room_images SET is_primary = 0 WHERE room_id = ?',
+    await client.query(
+      'UPDATE room_images SET is_primary = 0 WHERE room_id = $1',
       [id]
     );
 
-    await connection.query(
-      'UPDATE room_images SET is_primary = 1 WHERE id = ?',
+    await client.query(
+      'UPDATE room_images SET is_primary = 1 WHERE id = $1',
       [imageId]
     );
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.json({ message: 'Primary image updated successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to set primary image' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
