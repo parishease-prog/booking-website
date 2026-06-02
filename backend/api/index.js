@@ -51,23 +51,23 @@ try {
     next();
   });
   
-  // Register real routes
-  app.use(adminAuthRoutes);
-  app.use(catalogRoutes);
-  app.use(availabilityRoutes);
-  app.use(guestRoutes);
-  app.use(reservationRoutes);
-  app.use(paymentRoutes);
-  app.use(requestRoutes);
-  app.use(homepageSlideRoutes);
-  app.use(landingContentRoutes);
-  app.use(amenitiesContentRoutes);
-  app.use(amenitiesCardRoutes);
-  app.use(adminRoomRoutes);
-  app.use(uploadRoutes);
-  app.use(adminOpsRoutes);
-  app.use(reportRoutes);
-  app.use(inquiryRoutes);
+  // Register real routes with /api prefix
+  app.use('/api', adminAuthRoutes);
+  app.use('/api', catalogRoutes);
+  app.use('/api', availabilityRoutes);
+  app.use('/api', guestRoutes);
+  app.use('/api', reservationRoutes);
+  app.use('/api', paymentRoutes);
+  app.use('/api', requestRoutes);
+  app.use('/api', homepageSlideRoutes);
+  app.use('/api', landingContentRoutes);
+  app.use('/api', amenitiesContentRoutes);
+  app.use('/api', amenitiesCardRoutes);
+  app.use('/api', adminRoomRoutes);
+  app.use('/api', uploadRoutes);
+  app.use('/api', adminOpsRoutes);
+  app.use('/api', reportRoutes);
+  app.use('/api', inquiryRoutes);
   
   console.log('[API] Real database routes loaded successfully');
 } catch (err) {

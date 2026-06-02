@@ -112,22 +112,22 @@ app.get('/', (req, res) => {
   res.json({ message: 'Booking API is running', timestamp: new Date().toISOString() });
 });
 
-app.use(catalogRoutes);
-app.use(availabilityRoutes);
-app.use(guestRoutes);
-app.use(reservationRoutes);
-app.use(paymentRoutes);
-app.use('/requests', requestRoutes);
-app.use(adminAuthRoutes);
-app.use(homepageSlideRoutes);
-app.use(landingContentRoutes);
-app.use(amenitiesContentRoutes);
-app.use(amenitiesCardRoutes);
-app.use(adminRoomRoutes);
-app.use(uploadRoutes);
-app.use(adminOpsRoutes);
-app.use(reportRoutes);
-app.use('/inquiries', inquiryRoutes);
+app.use('/api', catalogRoutes);
+app.use('/api', availabilityRoutes);
+app.use('/api', guestRoutes);
+app.use('/api', reservationRoutes);
+app.use('/api', paymentRoutes);
+app.use('/api/requests', requestRoutes);
+app.use('/api', adminAuthRoutes);
+app.use('/api', homepageSlideRoutes);
+app.use('/api', landingContentRoutes);
+app.use('/api', amenitiesContentRoutes);
+app.use('/api', amenitiesCardRoutes);
+app.use('/api', adminRoomRoutes);
+app.use('/api', uploadRoutes);
+app.use('/api', adminOpsRoutes);
+app.use('/api', reportRoutes);
+app.use('/api/inquiries', inquiryRoutes);
 
 // Temporary debug endpoints that call controller handlers directly
 app.post('/__debug/reservation-holds', (req, res) => {
