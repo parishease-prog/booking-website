@@ -31,7 +31,10 @@ const app = express();
 const frontendDir = path.resolve(__dirname, '../../frontend');
 const uploadsDir = path.resolve(__dirname, '../uploads');
 
-app.use(cors());
+// Configure CORS to expose CSRF token header
+app.use(cors({
+  exposedHeaders: ['X-CSRF-Token']
+}));
 
 // CSRF token middleware - attach to all responses and validate on state-changing requests
 app.use(attachCSRFToken);
