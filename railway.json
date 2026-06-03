@@ -1,10 +1,9 @@
 {
   "build": {
     "builder": "nixpacks",
-    "rootDirectory": "backend"
+    "buildCommand": "cd backend && npm install"
   },
   "deploy": {
-    "startCommand": "node src/server.js",
-    "restartPolicyMaxRetries": 5
+    "startCommand": "cd backend && npm start"
   }
 }
