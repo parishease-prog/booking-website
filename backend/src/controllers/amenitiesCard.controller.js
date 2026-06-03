@@ -11,7 +11,7 @@ async function getPublicAmenitiesCards(req, res) {
         description,
         sort_order
       FROM amenities_cards
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY sort_order ASC, id ASC
       `
     );
@@ -26,7 +26,7 @@ async function getPublicAmenitiesCards(req, res) {
         alt_text,
         sort_order
       FROM amenities_card_images
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY amenities_card_id ASC, sort_order ASC, id ASC
       `
     );
