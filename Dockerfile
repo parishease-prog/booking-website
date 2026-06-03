@@ -12,7 +12,6 @@ RUN npm ci --only=production
 # Copy backend source code
 COPY backend/src ./src
 COPY backend/database ./database
-COPY backend/.env* ./
 
 # Expose port
 EXPOSE 5000
