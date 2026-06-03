@@ -4,7 +4,7 @@ const { validateEnum } = require('../utils/enums');
 
 async function getCancellationRequests(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT cr.*, r.reservation_code
       FROM cancellation_requests cr
@@ -12,6 +12,7 @@ async function getCancellationRequests(req, res) {
       ORDER BY cr.requested_at DESC
       `
     );
+    const rows = result.rows;
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -32,7 +33,7 @@ async function createCancellationRequest(req, res) {
       return res.status(400).json({ message: 'Reason must be 1-500 characters' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO cancellation_requests (
         reservation_id,
@@ -40,14 +41,16 @@ async function createCancellationRequest(req, res) {
         reason,
         request_status
       )
-      VALUES (?, ?, ?, 'pending')
+      VALUES ($1, $2, $3, 'pending')
+      RETURNING id
       `,
       [reservation_id, requested_by, reason.trim()]
     );
+    const request_id = result.rows[0].id;
 
     res.status(201).json({
       message: 'Cancellation request created successfully',
-      request_id: result.insertId
+      request_id: request_id
     });
   } catch (error) {
     console.error(error);
@@ -57,7 +60,7 @@ async function createCancellationRequest(req, res) {
 
 async function getRefundRequests(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT rr.*, r.reservation_code
       FROM refund_requests rr
@@ -65,6 +68,7 @@ async function getRefundRequests(req, res) {
       ORDER BY rr.requested_at DESC
       `
     );
+    const rows = result.rows;
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -93,10 +97,11 @@ async function createRefundRequest(req, res) {
     }
 
     // Fetch the reservation to validate the requested amount
-    const [reservations] = await pool.query(
-      'SELECT total_amount FROM reservations WHERE id = ?',
+    const reservations_result = await pool.query(
+      'SELECT total_amount FROM reservations WHERE id = $1',
       [reservation_id]
     );
+    const reservations = reservations_result.rows;
 
     if (reservations.length === 0) {
       return res.status(404).json({ message: 'Reservation not found' });
@@ -113,7 +118,7 @@ async function createRefundRequest(req, res) {
       });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO refund_requests (
         reservation_id,
@@ -122,14 +127,16 @@ async function createRefundRequest(req, res) {
         request_status,
         requested_amount
       )
-      VALUES (?, ?, ?, 'pending', ?)
+      VALUES ($1, $2, $3, 'pending', $4)
+      RETURNING id
       `,
       [reservation_id, payment_id || null, reason.trim(), requested_amount]
     );
+    const refund_id = result.rows[0].id;
 
     res.status(201).json({
       message: 'Refund request created successfully',
-      request_id: result.insertId
+      request_id: refund_id
     });
   } catch (error) {
     console.error(error);
@@ -139,7 +146,7 @@ async function createRefundRequest(req, res) {
 
 async function getStayExtensions(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT se.*, r.reservation_code
       FROM stay_extensions se
@@ -147,6 +154,7 @@ async function getStayExtensions(req, res) {
       ORDER BY se.requested_at DESC
       `
     );
+    const rows = result.rows;
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -174,10 +182,11 @@ async function createStayExtension(req, res) {
     }
 
     // Fetch the first reservation_room_id for this reservation
-    const [reservationRooms] = await pool.query(
-      'SELECT id FROM reservation_rooms WHERE reservation_id = ? LIMIT 1',
+    const reservationRooms_result = await pool.query(
+      'SELECT id FROM reservation_rooms WHERE reservation_id = $1 LIMIT 1',
       [reservation_id]
     );
+    const reservationRooms = reservationRooms_result.rows;
 
     if (reservationRooms.length === 0) {
       return res.status(404).json({ message: 'No rooms found for this reservation' });
@@ -185,7 +194,7 @@ async function createStayExtension(req, res) {
 
     const reservation_room_id = reservationRooms[0].id;
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO stay_extensions (
         reservation_id,
@@ -196,7 +205,8 @@ async function createStayExtension(req, res) {
         additional_amount,
         reason
       )
-      VALUES (?, ?, ?, ?, 'pending', 0, ?)
+      VALUES ($1, $2, $3, $4, 'pending', 0, $5)
+      RETURNING id
       `,
       [
         reservation_id,
@@ -206,10 +216,11 @@ async function createStayExtension(req, res) {
         reason || null
       ]
     );
+    const extension_id = result.rows[0].id;
 
     res.status(201).json({
       message: 'Stay extension request created successfully',
-      extension_id: result.insertId
+      extension_id: extension_id
     });
   } catch (error) {
     console.error(error);
@@ -219,7 +230,7 @@ async function createStayExtension(req, res) {
 
 async function getRoomTransfers(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         rt.*,
@@ -233,6 +244,7 @@ async function getRoomTransfers(req, res) {
       ORDER BY rt.created_at DESC
       `
     );
+    const rows = result.rows;
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -263,10 +275,11 @@ async function createRoomTransfer(req, res) {
     }
 
     // Fetch the first reservation_room_id and from_room_id for this reservation
-    const [reservationRooms] = await pool.query(
-      `SELECT id, room_id FROM reservation_rooms WHERE reservation_id = ? LIMIT 1`,
+    const reservationRooms_result = await pool.query(
+      `SELECT id, room_id FROM reservation_rooms WHERE reservation_id = $1 LIMIT 1`,
       [reservation_id]
     );
+    const reservationRooms = reservationRooms_result.rows;
 
     if (reservationRooms.length === 0) {
       return res.status(404).json({ message: 'No rooms found for this reservation' });
@@ -275,7 +288,7 @@ async function createRoomTransfer(req, res) {
     const reservation_room_id = reservationRooms[0].id;
     const from_room_id = reservationRooms[0].room_id;
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO room_transfers (
         reservation_id,
@@ -289,7 +302,8 @@ async function createRoomTransfer(req, res) {
         processed_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, 'pending', $6, 0, $7, $8)
+      RETURNING id
       `,
       [
         reservation_id,
@@ -302,10 +316,11 @@ async function createRoomTransfer(req, res) {
         notes || null
       ]
     );
+    const transfer_id = result.rows[0].id;
 
     res.status(201).json({
       message: 'Room transfer request created successfully',
-      transfer_id: result.insertId
+      transfer_id: transfer_id
     });
   } catch (error) {
     console.error(error);
@@ -332,8 +347,8 @@ async function updateCancellationRequest(req, res) {
     await pool.query(
       `
       UPDATE cancellation_requests
-      SET request_status = ?, review_notes = ?
-      WHERE id = ?
+      SET request_status = $1, review_notes = $2
+      WHERE id = $3
       `,
       [request_status, review_notes || null, id]
     );
@@ -348,7 +363,7 @@ async function updateCancellationRequest(req, res) {
 async function deleteCancellationRequest(req, res) {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM cancellation_requests WHERE id = ?', [id]);
+    await pool.query('DELETE FROM cancellation_requests WHERE id = $1', [id]);
     res.json({ message: 'Cancellation request deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -380,8 +395,8 @@ async function updateRefundRequest(req, res) {
     const updateResult = await pool.query(
       `
       UPDATE refund_requests
-      SET request_status = ?, review_notes = ?
-      WHERE id = ?
+      SET request_status = $1, review_notes = $2
+      WHERE id = $3
       `,
       [request_status, response_notes || null, id]
     );
@@ -398,7 +413,7 @@ async function updateRefundRequest(req, res) {
 async function deleteRefundRequest(req, res) {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM refund_requests WHERE id = ?', [id]);
+    await pool.query('DELETE FROM refund_requests WHERE id = $1', [id]);
     res.json({ message: 'Refund request deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -418,8 +433,8 @@ async function updateStayExtension(req, res) {
     await pool.query(
       `
       UPDATE stay_extensions
-      SET status = ?, notes = ?
-      WHERE id = ?
+      SET status = $1, notes = $2
+      WHERE id = $3
       `,
       [status, response_notes || null, id]
     );
@@ -434,7 +449,7 @@ async function updateStayExtension(req, res) {
 async function deleteStayExtension(req, res) {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM stay_extensions WHERE id = ?', [id]);
+    await pool.query('DELETE FROM stay_extensions WHERE id = $1', [id]);
     res.json({ message: 'Stay extension deleted successfully' });
   } catch (error) {
     console.error(error);
@@ -454,8 +469,8 @@ async function updateRoomTransfer(req, res) {
     await pool.query(
       `
       UPDATE room_transfers
-      SET transfer_status = ?, notes = ?
-      WHERE id = ?
+      SET transfer_status = $1, notes = $2
+      WHERE id = $3
       `,
       [status, notes || null, id]
     );
@@ -470,7 +485,7 @@ async function updateRoomTransfer(req, res) {
 async function deleteRoomTransfer(req, res) {
   try {
     const { id } = req.params;
-    await pool.query('DELETE FROM room_transfers WHERE id = ?', [id]);
+    await pool.query('DELETE FROM room_transfers WHERE id = $1', [id]);
     res.json({ message: 'Room transfer deleted successfully' });
   } catch (error) {
     console.error(error);

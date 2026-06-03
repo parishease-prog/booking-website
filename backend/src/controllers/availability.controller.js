@@ -2,7 +2,7 @@ const pool = require('../config/db');
 
 async function getAvailabilityBlocks(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT ab.*, r.room_number, r.room_name
       FROM availability_blocks ab
@@ -10,7 +10,7 @@ async function getAvailabilityBlocks(req, res) {
       ORDER BY ab.start_date ASC, ab.end_date ASC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch availability blocks' });
@@ -40,7 +40,7 @@ async function createAvailabilityBlock(req, res) {
       return res.status(400).json({ message: 'room_id is required for room blocks' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO availability_blocks (
         room_id,
@@ -51,7 +51,8 @@ async function createAvailabilityBlock(req, res) {
         status,
         created_by
       )
-      VALUES (?, ?, ?, ?, ?, 'active', ?)
+      VALUES ($1, $2, $3, $4, $5, 'active', $6)
+      RETURNING id
       `,
       [
         block_scope === 'whole_resort' ? null : room_id,
@@ -65,7 +66,7 @@ async function createAvailabilityBlock(req, res) {
 
     res.status(201).json({
       message: 'Availability block created successfully',
-      block_id: result.insertId
+      block_id: result.rows[0].id
     });
   } catch (error) {
     console.error(error);

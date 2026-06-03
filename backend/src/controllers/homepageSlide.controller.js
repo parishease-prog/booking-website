@@ -3,7 +3,7 @@ const { validateUrl, validateText } = require('../utils/validation');
 
 async function getPublicHomepageSlides(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         id,
@@ -19,6 +19,7 @@ async function getPublicHomepageSlides(req, res) {
       ORDER BY sort_order ASC, id ASC
       `
     );
+    const rows = result.rows;
 
     res.json(rows);
   } catch (error) {
@@ -29,7 +30,7 @@ async function getPublicHomepageSlides(req, res) {
 
 async function getAdminHomepageSlides(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         hs.*,
@@ -41,6 +42,7 @@ async function getAdminHomepageSlides(req, res) {
       ORDER BY hs.sort_order ASC, hs.id ASC
       `
     );
+    const rows = result.rows;
 
     res.json(rows);
   } catch (error) {
@@ -71,7 +73,7 @@ async function createHomepageSlide(req, res) {
       return res.status(400).json({ message: 'Invalid image URL format' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO homepage_slides (
         title,
@@ -85,7 +87,8 @@ async function createHomepageSlide(req, res) {
         created_by,
         updated_by
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id
       `,
       [
         title,
@@ -100,11 +103,13 @@ async function createHomepageSlide(req, res) {
         req.user.id
       ]
     );
+    const slideId = result.rows[0].id;
 
-    const [rows] = await pool.query(
-      'SELECT * FROM homepage_slides WHERE id = ? LIMIT 1',
-      [result.insertId]
+    const rows_result = await pool.query(
+      'SELECT * FROM homepage_slides WHERE id = $1 LIMIT 1',
+      [slideId]
     );
+    const rows = rows_result.rows;
 
     res.status(201).json(rows[0]);
   } catch (error) {
@@ -136,21 +141,21 @@ async function updateHomepageSlide(req, res) {
       return res.status(400).json({ message: 'Invalid image URL format' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       UPDATE homepage_slides
       SET
-        title = ?,
-        subtitle = ?,
-        image_url = ?,
-        alt_text = ?,
-        button_label = ?,
-        button_link = ?,
-        sort_order = ?,
-        is_active = ?,
-        updated_by = ?,
+        title = $1,
+        subtitle = $2,
+        image_url = $3,
+        alt_text = $4,
+        button_label = $5,
+        button_link = $6,
+        sort_order = $7,
+        is_active = $8,
+        updated_by = $9,
         updated_at = NOW()
-      WHERE id = ?
+      WHERE id = $10
       `,
       [
         title,
@@ -166,14 +171,15 @@ async function updateHomepageSlide(req, res) {
       ]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Homepage slide not found' });
     }
 
-    const [rows] = await pool.query(
-      'SELECT * FROM homepage_slides WHERE id = ? LIMIT 1',
+    const rows_result = await pool.query(
+      'SELECT * FROM homepage_slides WHERE id = $1 LIMIT 1',
       [id]
     );
+    const rows = rows_result.rows;
 
     res.json(rows[0]);
   } catch (error) {
@@ -185,12 +191,12 @@ async function updateHomepageSlide(req, res) {
 async function deleteHomepageSlide(req, res) {
   try {
     const { id } = req.params;
-    const [result] = await pool.query(
-      'DELETE FROM homepage_slides WHERE id = ?',
+    const result = await pool.query(
+      'DELETE FROM homepage_slides WHERE id = $1',
       [id]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Homepage slide not found' });
     }
 

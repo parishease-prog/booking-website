@@ -11,7 +11,7 @@ const defaultAmenitiesContent = {
 
 async function getPublicAmenitiesContent(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         eyebrow,
@@ -24,6 +24,7 @@ async function getPublicAmenitiesContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0] || defaultAmenitiesContent);
   } catch (error) {
@@ -34,7 +35,7 @@ async function getPublicAmenitiesContent(req, res) {
 
 async function getAdminAmenitiesContent(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         ac.*,
@@ -45,6 +46,7 @@ async function getAdminAmenitiesContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0] || defaultAmenitiesContent);
   } catch (error) {
@@ -76,9 +78,10 @@ async function saveAmenitiesContent(req, res) {
       });
     }
 
-    const [existingRows] = await pool.query(
+    const existingResult = await pool.query(
       'SELECT id FROM amenities_content ORDER BY id ASC LIMIT 1'
     );
+    const existingRows = existingResult.rows;
 
     if (existingRows.length) {
       const existingId = existingRows[0].id;
@@ -87,14 +90,14 @@ async function saveAmenitiesContent(req, res) {
         `
         UPDATE amenities_content
         SET
-          eyebrow = ?,
-          title = ?,
-          image_url = ?,
-          image_alt = ?,
-          subtitle = ?,
-          updated_by = ?,
+          eyebrow = $1,
+          title = $2,
+          image_url = $3,
+          image_alt = $4,
+          subtitle = $5,
+          updated_by = $6,
           updated_at = NOW()
-        WHERE id = ?
+        WHERE id = $7
         `,
         [
           eyebrow,
@@ -117,7 +120,7 @@ async function saveAmenitiesContent(req, res) {
           subtitle,
           updated_by
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6)
         `,
         [
           eyebrow,
@@ -130,7 +133,7 @@ async function saveAmenitiesContent(req, res) {
       );
     }
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         ac.*,
@@ -141,6 +144,7 @@ async function saveAmenitiesContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0]);
   } catch (error) {

@@ -7,10 +7,10 @@ const {
 
 async function getRoomTypes(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       'SELECT * FROM room_types ORDER BY base_price ASC, name ASC'
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch room types' });
@@ -19,7 +19,7 @@ async function getRoomTypes(req, res) {
 
 async function getRooms(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         r.*,
@@ -45,7 +45,7 @@ async function getRooms(req, res) {
       ORDER BY r.room_number ASC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Database query failed' });
@@ -54,7 +54,7 @@ async function getRooms(req, res) {
 
 async function getPromos(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT *
       FROM promos
@@ -62,7 +62,7 @@ async function getPromos(req, res) {
       ORDER BY start_date ASC, end_date ASC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch promos' });
@@ -80,14 +80,14 @@ async function getAvailableRooms(req, res) {
 
     await expireStaleHolds(pool);
 
-    const [rows] = await getAvailableRoomsQuery(pool, {
+    const availableRoomsResult = await getAvailableRoomsQuery(pool, {
       checkInDate: check_in_date,
       checkOutDate: check_out_date,
       roomTypeId: room_type_id || null,
       ignoreHoldToken: hold_token || null
     });
 
-    res.json(rows);
+    res.json(availableRoomsResult);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch available rooms' });

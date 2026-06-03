@@ -36,22 +36,22 @@ async function loginAdmin(req, res) {
       });
     }
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT id, full_name, email, password_hash, role, is_active
       FROM users
-      WHERE email = ?
+      WHERE email = $1
       LIMIT 1
       `,
       [email]
     );
 
-    if (!rows.length) {
+    if (!result.rows.length) {
       recordFailedAttempt(email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const user = rows[0];
+    const user = result.rows[0];
 
     if (!user.is_active) {
       recordFailedAttempt(email);
@@ -85,7 +85,7 @@ async function loginAdmin(req, res) {
     );
 
     await pool.query(
-      'UPDATE users SET last_login_at = NOW() WHERE id = ?',
+      'UPDATE users SET last_login_at = NOW() WHERE id = $1',
       [user.id]
     );
 
@@ -101,21 +101,21 @@ async function loginAdmin(req, res) {
 
 async function getCurrentAdmin(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT id, full_name, email, role
       FROM users
-      WHERE id = ?
+      WHERE id = $1
       LIMIT 1
       `,
       [req.user.id]
     );
 
-    if (!rows.length) {
+    if (!result.rows.length) {
       return res.status(404).json({ message: 'Admin account not found' });
     }
 
-    res.json({ user: sanitizeUser(rows[0]) });
+    res.json({ user: sanitizeUser(result.rows[0]) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to load account details' });

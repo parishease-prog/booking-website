@@ -9,13 +9,13 @@ async function getInquiries(req, res) {
     const where = [];
 
     if (status) {
-      where.push('status = ?');
+      where.push('status = $1');
       params.push(status);
     }
 
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT id, name, email, phone, subject, message, status, responded_at, response_notes, created_at
       FROM inquiries
@@ -25,7 +25,7 @@ async function getInquiries(req, res) {
       params
     );
 
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch inquiries' });
@@ -40,14 +40,15 @@ async function getInquiry(req, res) {
       return res.status(400).json({ message: 'Inquiry ID is required' });
     }
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT *
       FROM inquiries
-      WHERE id = ?
+      WHERE id = $1
       `,
       [id]
     );
+    const rows = result.rows;
 
     if (!rows.length) {
       return res.status(404).json({ message: 'Inquiry not found' });
@@ -55,7 +56,7 @@ async function getInquiry(req, res) {
 
     // Mark as read if it was new
     if (rows[0].status === 'new') {
-      await pool.query('UPDATE inquiries SET status = ? WHERE id = ?', ['read', id]);
+      await pool.query('UPDATE inquiries SET status = $1 WHERE id = $2', ['read', id]);
     }
 
     res.json(rows[0]);
@@ -103,17 +104,18 @@ async function createInquiry(req, res) {
       return res.status(400).json({ message: 'Message must be 1-2000 characters' });
     }
 
-    const [result] = await pool.query(
+    const result = await pool.query(
       `
       INSERT INTO inquiries (name, email, phone, subject, message)
-      VALUES (?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
       `,
       [validatedName, email, phone || null, validatedSubject, validatedMessage]
     );
 
     res.status(201).json({
       message: 'Inquiry submitted successfully',
-      inquiry_id: result.insertId
+      inquiry_id: result.rows[0].id
     });
   } catch (error) {
     console.error(error);
@@ -145,36 +147,38 @@ async function updateInquiry(req, res) {
       }
     }
 
-    // Build safe parameterized update with fixed field set
-    const updateData = {};
+    // Build SET clause safely - using numbered parameters
+    // Build SET clause safely - using numbered parameters
+    const setClauses = [];
     const params = [];
+    let paramCounter = 1;
 
     if (status) {
-      updateData.status = status;
+      setClauses.push(`status = $${paramCounter++}`);
       params.push(status);
     }
 
     if (response_notes !== undefined) {
-      updateData.response_notes = response_notes || null;
-      params.push(updateData.response_notes);
+      setClauses.push(`response_notes = $${paramCounter++}`);
+      params.push(response_notes || null);
     }
 
-    // If marking as responded, update responded_at timestamp
     if (status === 'responded') {
-      updateData.responded_at = new Date();
-      params.push(updateData.responded_at);
+      setClauses.push(`responded_at = NOW()`);
     }
 
-    // Build SET clause safely
-    const setClause = Object.keys(updateData).map(key => `${key} = ?`).join(', ');
+    setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
     params.push(id);
 
-    const [result] = await pool.query(
-      `UPDATE inquiries SET ${setClause} WHERE id = ?`,
+    const setClause = setClauses.join(', ');
+    params.push(id);
+
+    const result = await pool.query(
+      `UPDATE inquiries SET ${setClause} WHERE id = $${paramCounter}`,
       params
     );
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Inquiry not found' });
     }
 
@@ -193,12 +197,12 @@ async function deleteInquiry(req, res) {
       return res.status(400).json({ message: 'Inquiry ID is required' });
     }
 
-    const [result] = await pool.query(
-      `DELETE FROM inquiries WHERE id = ?`,
+    const result = await pool.query(
+      `DELETE FROM inquiries WHERE id = $1`,
       [id]
     );
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Inquiry not found' });
     }
 

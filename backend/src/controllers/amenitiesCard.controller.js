@@ -3,7 +3,7 @@ const { validateUrl, validateText } = require('../utils/validation');
 
 async function getPublicAmenitiesCards(req, res) {
   try {
-    const [cardRows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         id,
@@ -15,8 +15,9 @@ async function getPublicAmenitiesCards(req, res) {
       ORDER BY sort_order ASC, id ASC
       `
     );
+    const cardRows = result.rows;
 
-    const [imageRows] = await pool.query(
+    const result_images = await pool.query(
       `
       SELECT
         id,
@@ -29,6 +30,7 @@ async function getPublicAmenitiesCards(req, res) {
       ORDER BY amenities_card_id ASC, sort_order ASC, id ASC
       `
     );
+    const imageRows = result_images.rows;
 
     const imagesByCardId = imageRows.reduce((acc, image) => {
       if (!acc[image.amenities_card_id]) {
@@ -53,7 +55,7 @@ async function getPublicAmenitiesCards(req, res) {
 
 async function getAdminAmenitiesCards(req, res) {
   try {
-    const [cardRows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         ac.*,
@@ -63,14 +65,16 @@ async function getAdminAmenitiesCards(req, res) {
       ORDER BY ac.sort_order ASC, ac.id ASC
       `
     );
+    const cardRows = result.rows;
 
-    const [imageRows] = await pool.query(
+    const result_images = await pool.query(
       `
       SELECT *
       FROM amenities_card_images
       ORDER BY amenities_card_id ASC, sort_order ASC, id ASC
       `
     );
+    const imageRows = result_images.rows;
 
     const imagesByCardId = imageRows.reduce((acc, image) => {
       if (!acc[image.amenities_card_id]) {
@@ -94,7 +98,7 @@ async function getAdminAmenitiesCards(req, res) {
 }
 
 async function createAmenitiesCard(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const {
@@ -118,9 +122,9 @@ async function createAmenitiesCard(req, res) {
       return res.status(400).json({ message: 'Description must be 1-500 characters' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [result] = await connection.query(
+    const result = await client.query(
       `
       INSERT INTO amenities_cards (
         title,
@@ -129,7 +133,8 @@ async function createAmenitiesCard(req, res) {
         is_active,
         updated_by
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id
       `,
       [
         title.trim(),
@@ -140,7 +145,7 @@ async function createAmenitiesCard(req, res) {
       ]
     );
 
-    const cardId = result.insertId;
+    const cardId = result.rows[0].id;
     const normalizedImages = Array.isArray(images) ? images : [];
 
     for (const image of normalizedImages) {
@@ -153,7 +158,7 @@ async function createAmenitiesCard(req, res) {
         continue; // Skip invalid URLs
       }
 
-      await connection.query(
+      await client.query(
         `
         INSERT INTO amenities_card_images (
           amenities_card_id,
@@ -162,7 +167,7 @@ async function createAmenitiesCard(req, res) {
           sort_order,
           is_active
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
         `,
         [
           cardId,
@@ -174,46 +179,48 @@ async function createAmenitiesCard(req, res) {
       );
     }
 
-    await connection.commit();
+    await client.query('COMMIT');
 
-    const [rows] = await pool.query(
+    const rows_result = await pool.query(
       `
       SELECT
         ac.*,
         updater.full_name AS updated_by_name
       FROM amenities_cards ac
       LEFT JOIN users updater ON updater.id = ac.updated_by
-      WHERE ac.id = ?
+      WHERE ac.id = $1
       LIMIT 1
       `,
       [cardId]
     );
+    const rows = rows_result.rows;
 
-    const [imageRows] = await pool.query(
+    const imageRows_result = await pool.query(
       `
       SELECT *
       FROM amenities_card_images
-      WHERE amenities_card_id = ?
+      WHERE amenities_card_id = $1
       ORDER BY sort_order ASC, id ASC
       `,
       [cardId]
     );
+    const imageRows = imageRows_result.rows;
 
     res.status(201).json({
       ...rows[0],
       images: imageRows
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to create amenities card' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function updateAmenitiesCard(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const { id } = req.params;
@@ -229,19 +236,19 @@ async function updateAmenitiesCard(req, res) {
       return res.status(400).json({ message: 'Title and description are required' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [result] = await connection.query(
+    const result = await client.query(
       `
       UPDATE amenities_cards
       SET
-        title = ?,
-        description = ?,
-        sort_order = ?,
-        is_active = ?,
-        updated_by = ?,
+        title = $1,
+        description = $2,
+        sort_order = $3,
+        is_active = $4,
+        updated_by = $5,
         updated_at = NOW()
-      WHERE id = ?
+      WHERE id = $6
       `,
       [
         title,
@@ -253,13 +260,13 @@ async function updateAmenitiesCard(req, res) {
       ]
     );
 
-    if (!result.affectedRows) {
-      await connection.rollback();
+    if (!result.rowCount) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Amenities card not found' });
     }
 
-    await connection.query(
-      'DELETE FROM amenities_card_images WHERE amenities_card_id = ?',
+    await client.query(
+      'DELETE FROM amenities_card_images WHERE amenities_card_id = $1',
       [id]
     );
 
@@ -270,7 +277,7 @@ async function updateAmenitiesCard(req, res) {
         continue;
       }
 
-      await connection.query(
+      await client.query(
         `
         INSERT INTO amenities_card_images (
           amenities_card_id,
@@ -279,7 +286,7 @@ async function updateAmenitiesCard(req, res) {
           sort_order,
           is_active
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
         `,
         [
           id,
@@ -291,53 +298,55 @@ async function updateAmenitiesCard(req, res) {
       );
     }
 
-    await connection.commit();
+    await client.query('COMMIT');
 
-    const [rows] = await pool.query(
+    const rows_result = await pool.query(
       `
       SELECT
         ac.*,
         updater.full_name AS updated_by_name
       FROM amenities_cards ac
       LEFT JOIN users updater ON updater.id = ac.updated_by
-      WHERE ac.id = ?
+      WHERE ac.id = $1
       LIMIT 1
       `,
       [id]
     );
+    const rows = rows_result.rows;
 
-    const [imageRows] = await pool.query(
+    const imageRows_result = await pool.query(
       `
       SELECT *
       FROM amenities_card_images
-      WHERE amenities_card_id = ?
+      WHERE amenities_card_id = $1
       ORDER BY sort_order ASC, id ASC
       `,
       [id]
     );
+    const imageRows = imageRows_result.rows;
 
     res.json({
       ...rows[0],
       images: imageRows
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to update amenities card' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function deleteAmenitiesCard(req, res) {
   try {
     const { id } = req.params;
-    const [result] = await pool.query(
-      'DELETE FROM amenities_cards WHERE id = ?',
+    const result = await pool.query(
+      'DELETE FROM amenities_cards WHERE id = $1',
       [id]
     );
 
-    if (!result.affectedRows) {
+    if (!result.rowCount) {
       return res.status(404).json({ message: 'Amenities card not found' });
     }
 

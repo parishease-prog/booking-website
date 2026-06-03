@@ -38,7 +38,7 @@ function verifyWebhookSignature(req) {
 
 async function getPayments(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         p.*,
@@ -48,7 +48,7 @@ async function getPayments(req, res) {
       ORDER BY p.created_at DESC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch payments' });
@@ -62,23 +62,23 @@ async function getAdminPayments(req, res) {
     const params = [];
 
     if (reservation_id) {
-      conditions.push('p.reservation_id = ?');
+      conditions.push('p.reservation_id = $1');
       params.push(Number(reservation_id));
     }
 
     if (reservation_code) {
-      conditions.push('r.reservation_code = ?');
+      conditions.push('r.reservation_code = $' + (conditions.length + 1));
       params.push(String(reservation_code));
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         p.*,
         r.reservation_code,
-        CONCAT(g.first_name, ' ', g.last_name) AS guest_name,
+        g.first_name || ' ' || g.last_name AS guest_name,
         g.email AS guest_email,
         recorder.full_name AS recorded_by_name
       FROM payments p
@@ -91,7 +91,7 @@ async function getAdminPayments(req, res) {
       params
     );
 
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch payments' });
@@ -99,7 +99,7 @@ async function getAdminPayments(req, res) {
 }
 
 async function createPayment(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const {
@@ -137,32 +137,29 @@ async function createPayment(req, res) {
       return res.status(400).json({ message: 'amount must be a positive number' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [reservationRows] = await connection.query(
+    const reservationResult = await client.query(
       `
       SELECT id
       FROM reservations
-      WHERE (? IS NOT NULL AND id = ?)
-        OR (? IS NOT NULL AND reservation_code = ?)
+      WHERE (($1::integer IS NOT NULL AND id = $1) OR ($2::text IS NOT NULL AND reservation_code = $2))
       LIMIT 1
       `,
       [
         reservation_id ?? null,
-        reservation_id ?? null,
-        reservation_code ?? null,
         reservation_code ?? null
       ]
     );
 
-    if (!reservationRows.length) {
-      await connection.rollback();
+    if (!reservationResult.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Reservation not found' });
     }
 
-    const resolvedReservationId = reservationRows[0].id;
+    const resolvedReservationId = reservationResult.rows[0].id;
 
-    const [result] = await connection.query(
+    const result = await client.query(
       `
       INSERT INTO payments (
         reservation_id,
@@ -178,7 +175,8 @@ async function createPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING id
       `,
       [
         resolvedReservationId,
@@ -196,33 +194,33 @@ async function createPayment(req, res) {
       ]
     );
 
-    await updateReservationPaymentSummary(connection, resolvedReservationId);
+    await updateReservationPaymentSummary(client, resolvedReservationId);
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: null,
       entityType: 'payment',
-      entityId: result.insertId,
+      entityId: result.rows[0].id,
       action: 'create_payment',
       description: `Guest submitted pending payment for reservation ${resolvedReservationId}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Payment recorded successfully',
-      payment_id: result.insertId
+      payment_id: result.rows[0].id
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to record payment' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function createAdminPayment(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const {
@@ -249,34 +247,34 @@ async function createAdminPayment(req, res) {
       return res.status(400).json({ message: 'amount must be a positive number' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
     if (provider_event_id) {
-      const [existingRows] = await connection.query(
-        'SELECT id FROM payments WHERE provider_event_id = ? LIMIT 1',
+      const existingResult = await client.query(
+        'SELECT id FROM payments WHERE provider_event_id = $1 LIMIT 1',
         [provider_event_id]
       );
 
-      if (existingRows.length) {
-        await connection.rollback();
+      if (existingResult.rows.length) {
+        await client.query('ROLLBACK');
         return res.status(200).json({
           message: 'Payment event already recorded',
-          payment_id: existingRows[0].id
+          payment_id: existingResult.rows[0].id
         });
       }
     }
 
-    const [reservationRows] = await connection.query(
-      'SELECT id FROM reservations WHERE id = ? LIMIT 1',
+    const reservationResult = await client.query(
+      'SELECT id FROM reservations WHERE id = $1 LIMIT 1',
       [reservation_id]
     );
 
-    if (!reservationRows.length) {
-      await connection.rollback();
+    if (!reservationResult.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Reservation not found' });
     }
 
-    const [result] = await connection.query(
+    const result = await client.query(
       `
       INSERT INTO payments (
         reservation_id,
@@ -292,7 +290,8 @@ async function createAdminPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10, $11)
+      RETURNING id
       `,
       [
         reservation_id,
@@ -309,28 +308,28 @@ async function createAdminPayment(req, res) {
       ]
     );
 
-    await updateReservationPaymentSummary(connection, reservation_id);
+    await updateReservationPaymentSummary(client, reservation_id);
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: req.user?.id || null,
       entityType: 'payment',
-      entityId: result.insertId,
+      entityId: result.rows[0].id,
       action: 'admin_record_payment',
       description: `Admin recorded ${payment_status} payment for reservation ${reservation_id}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Payment recorded successfully',
-      payment_id: result.insertId
+      payment_id: result.rows[0].id
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to record payment' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
@@ -350,7 +349,7 @@ async function handlePaymentWebhook(req, res) {
   let eventRecordId = null;
 
   try {
-    const [eventResult] = await pool.query(
+    const eventResult = await pool.query(
       `
       INSERT INTO payment_webhook_events (
         provider,
@@ -358,20 +357,21 @@ async function handlePaymentWebhook(req, res) {
         processing_status,
         payload_json
       )
-      VALUES (?, ?, 'received', ?)
+      VALUES ($1, $2, 'received', $3)
+      RETURNING id
       `,
       [provider, eventId, JSON.stringify(payload)]
     );
-    eventRecordId = eventResult.insertId;
+    eventRecordId = eventResult.rows[0].id;
   } catch (error) {
-    if (error && error.code === 'ER_DUP_ENTRY') {
+    if (error && error.code === '23505') {
       return res.status(200).json({ message: 'Webhook event already processed' });
     }
     console.error(error);
     return res.status(500).json({ message: 'Failed to register webhook event' });
   }
 
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const amount = Number(payload.amount);
@@ -381,35 +381,34 @@ async function handlePaymentWebhook(req, res) {
       throw new Error('amount must be a positive number');
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [reservationRows] = await connection.query(
+    const reservationResult = await client.query(
       `
       SELECT id
       FROM reservations
-      WHERE id = ? OR reservation_code = ?
+      WHERE id = $1 OR reservation_code = $2
       LIMIT 1
-      FOR UPDATE
       `,
       [payload.reservation_id || null, payload.reservation_code || null]
     );
 
-    if (!reservationRows.length) {
+    if (!reservationResult.rows.length) {
       throw new Error('Reservation for webhook payload was not found');
     }
 
-    const reservationId = reservationRows[0].id;
+    const reservationId = reservationResult.rows[0].id;
 
-    const [paymentRows] = await connection.query(
-      'SELECT id FROM payments WHERE provider_event_id = ? LIMIT 1',
+    const paymentCheckResult = await client.query(
+      'SELECT id FROM payments WHERE provider_event_id = $1 LIMIT 1',
       [eventId]
     );
 
     let paymentId = null;
-    if (paymentRows.length) {
-      paymentId = paymentRows[0].id;
+    if (paymentCheckResult.rows.length) {
+      paymentId = paymentCheckResult.rows[0].id;
     } else {
-      const [paymentResult] = await connection.query(
+      const paymentResult = await client.query(
         `
         INSERT INTO payments (
           reservation_id,
@@ -425,7 +424,8 @@ async function handlePaymentWebhook(req, res) {
           recorded_by_user_id,
           notes
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NULL, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NULL, $10)
+        RETURNING id
         `,
         [
           reservationId,
@@ -440,27 +440,27 @@ async function handlePaymentWebhook(req, res) {
           payload.notes || 'Recorded via webhook'
         ]
       );
-      paymentId = paymentResult.insertId;
+      paymentId = paymentResult.rows[0].id;
     }
 
-    await updateReservationPaymentSummary(connection, reservationId);
+    await updateReservationPaymentSummary(client, reservationId);
 
-    await connection.query(
+    await client.query(
       `
       UPDATE payment_webhook_events
       SET
-        reservation_id = ?,
-        payment_id = ?,
+        reservation_id = $1,
+        payment_id = $2,
         processing_status = 'processed',
         error_message = NULL,
         processed_at = NOW(),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $3
       `,
       [reservationId, paymentId, eventRecordId]
     );
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: null,
       entityType: 'payment',
       entityId: paymentId,
@@ -468,18 +468,18 @@ async function handlePaymentWebhook(req, res) {
       description: `Webhook ${provider}:${eventId} processed for reservation ${reservationId}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
     res.status(200).json({ message: 'Webhook processed successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
 
     if (eventRecordId) {
       await pool.query(
         `
         UPDATE payment_webhook_events
-        SET processing_status = 'failed', error_message = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
+        SET processing_status = 'failed', error_message = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
         `,
         [String(error.message || 'Webhook processing failed').slice(0, 255), eventRecordId]
       );
@@ -487,40 +487,39 @@ async function handlePaymentWebhook(req, res) {
 
     res.status(500).json({ message: error.message || 'Failed to process webhook' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function refundAdminPayment(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const paymentId = Number(req.params.id);
     const requestedAmount = req.body?.amount;
     const notes = req.body?.notes || null;
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [paymentRows] = await connection.query(
+    const paymentResult = await client.query(
       `
       SELECT *
       FROM payments
-      WHERE id = ?
+      WHERE id = $1
       LIMIT 1
-      FOR UPDATE
       `,
       [paymentId]
     );
 
-    if (!paymentRows.length) {
-      await connection.rollback();
+    if (!paymentResult.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Payment not found' });
     }
 
-    const payment = paymentRows[0];
+    const payment = paymentResult.rows[0];
 
     if (!['paid', 'partial'].includes(payment.payment_status)) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Only paid or partial payments can be refunded' });
     }
 
@@ -529,11 +528,11 @@ async function refundAdminPayment(req, res) {
       : Number(requestedAmount);
 
     if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > Number(payment.amount)) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Refund amount is invalid' });
     }
 
-    const [refundResult] = await connection.query(
+    const refundResult = await client.query(
       `
       INSERT INTO payments (
         reservation_id,
@@ -547,7 +546,8 @@ async function refundAdminPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES (?, ?, ?, ?, ?, 'refunded', ?, NOW(), ?, ?)
+      VALUES ($1, $2, $3, $4, $5, 'refunded', $6, NOW(), $7, $8)
+      RETURNING id
       `,
       [
         payment.reservation_id,
@@ -561,33 +561,33 @@ async function refundAdminPayment(req, res) {
       ]
     );
 
-    await updateReservationPaymentSummary(connection, payment.reservation_id);
+    await updateReservationPaymentSummary(client, payment.reservation_id);
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: req.user?.id || null,
       entityType: 'payment',
-      entityId: refundResult.insertId,
+      entityId: refundResult.rows[0].id,
       action: 'admin_refund_payment',
       description: `Refunded ${refundAmount} from payment ${payment.id}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
 
     res.status(201).json({
       message: 'Refund recorded successfully',
-      refund_payment_id: refundResult.insertId
+      refund_payment_id: refundResult.rows[0].id
     });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to record refund' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function approveAdminPayment(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const paymentId = Number(req.params.id);
@@ -595,52 +595,51 @@ async function approveAdminPayment(req, res) {
       return res.status(400).json({ message: 'Invalid payment id' });
     }
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [rows] = await connection.query(
+    const result = await client.query(
       `
       SELECT id, reservation_id, payment_status
       FROM payments
-      WHERE id = ?
+      WHERE id = $1
       LIMIT 1
-      FOR UPDATE
       `,
       [paymentId]
     );
 
-    if (!rows.length) {
-      await connection.rollback();
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Payment not found' });
     }
 
-    const payment = rows[0];
+    const payment = result.rows[0];
 
     if (payment.payment_status === 'paid') {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Payment is already marked as paid' });
     }
 
     if (payment.payment_status === 'refunded') {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Refunded payments cannot be approved' });
     }
 
-    await connection.query(
+    await client.query(
       `
       UPDATE payments
       SET
         payment_status = 'paid',
         paid_at = COALESCE(paid_at, NOW()),
-        recorded_by_user_id = ?,
+        recorded_by_user_id = $1,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $2
       `,
       [req.user?.id || null, paymentId]
     );
 
-    await updateReservationPaymentSummary(connection, payment.reservation_id);
+    await updateReservationPaymentSummary(client, payment.reservation_id);
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: req.user?.id || null,
       entityType: 'payment',
       entityId: paymentId,
@@ -648,19 +647,19 @@ async function approveAdminPayment(req, res) {
       description: `Admin approved payment ${paymentId} for reservation ${payment.reservation_id}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
     res.status(200).json({ message: 'Payment approved successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to approve payment' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 
 async function declineAdminPayment(req, res) {
-  const connection = await pool.getConnection();
+  const client = await pool.connect();
 
   try {
     const paymentId = Number(req.params.id);
@@ -670,58 +669,57 @@ async function declineAdminPayment(req, res) {
 
     const notes = req.body?.notes ? String(req.body.notes).slice(0, 2000) : null;
 
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
-    const [rows] = await connection.query(
+    const result = await client.query(
       `
       SELECT id, reservation_id, payment_status
       FROM payments
-      WHERE id = ?
+      WHERE id = $1
       LIMIT 1
-      FOR UPDATE
       `,
       [paymentId]
     );
 
-    if (!rows.length) {
-      await connection.rollback();
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Payment not found' });
     }
 
-    const payment = rows[0];
+    const payment = result.rows[0];
 
     if (payment.payment_status === 'paid') {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Paid payments cannot be declined' });
     }
 
     if (payment.payment_status === 'refunded') {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Refunded payments cannot be declined' });
     }
 
     if (payment.payment_status !== 'pending') {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       return res.status(400).json({ message: `Only pending payments can be declined (current: ${payment.payment_status})` });
     }
 
-    await connection.query(
+    await client.query(
       `
       UPDATE payments
       SET
         payment_status = 'failed',
         paid_at = NULL,
-        recorded_by_user_id = ?,
-        notes = COALESCE(?, notes),
+        recorded_by_user_id = $1,
+        notes = COALESCE($2, notes),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $3
       `,
       [req.user?.id || null, notes, paymentId]
     );
 
-    await updateReservationPaymentSummary(connection, payment.reservation_id);
+    await updateReservationPaymentSummary(client, payment.reservation_id);
 
-    await logActivity(connection, {
+    await logActivity(client, {
       userId: req.user?.id || null,
       entityType: 'payment',
       entityId: paymentId,
@@ -729,14 +727,14 @@ async function declineAdminPayment(req, res) {
       description: `Admin declined payment ${paymentId} for reservation ${payment.reservation_id}`
     });
 
-    await connection.commit();
+    await client.query('COMMIT');
     res.status(200).json({ message: 'Payment declined successfully' });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     console.error(error);
     res.status(500).json({ message: 'Failed to decline payment' });
   } finally {
-    connection.release();
+    client.release();
   }
 }
 

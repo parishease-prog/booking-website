@@ -3,14 +3,14 @@ const { validateEmail, validateText } = require('../utils/validation');
 
 async function getGuests(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT *
       FROM guests
       ORDER BY created_at DESC
       `
     );
-    res.json(rows);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch guests' });
@@ -19,16 +19,16 @@ async function getGuests(req, res) {
 
 async function getGuestById(req, res) {
   try {
-    const [rows] = await pool.query(
-      'SELECT * FROM guests WHERE id = ? LIMIT 1',
+    const result = await pool.query(
+      'SELECT * FROM guests WHERE id = $1 LIMIT 1',
       [req.params.id]
     );
 
-    if (rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Guest not found' });
     }
 
-    res.json(rows[0]);
+    res.json(result.rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Failed to fetch guest' });
@@ -88,17 +88,17 @@ async function updateGuest(req, res) {
       `
       UPDATE guests
       SET
-        first_name = COALESCE(?, first_name),
-        last_name = COALESCE(?, last_name),
-        email = COALESCE(?, email),
-        phone = COALESCE(?, phone),
-        address_line = COALESCE(?, address_line),
-        city = COALESCE(?, city),
-        province = COALESCE(?, province),
-        country = COALESCE(?, country),
-        notes = COALESCE(?, notes),
+        first_name = COALESCE($1, first_name),
+        last_name = COALESCE($2, last_name),
+        email = COALESCE($3, email),
+        phone = COALESCE($4, phone),
+        address_line = COALESCE($5, address_line),
+        city = COALESCE($6, city),
+        province = COALESCE($7, province),
+        country = COALESCE($8, country),
+        notes = COALESCE($9, notes),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $10
       `,
       [
         first_name ?? null,

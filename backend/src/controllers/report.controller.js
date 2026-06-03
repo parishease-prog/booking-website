@@ -11,7 +11,7 @@ async function getReservationsReport(req, res) {
       SELECT 
         r.id,
         r.reservation_code,
-        CONCAT(g.first_name, ' ', g.last_name) as guest_name,
+        g.first_name || ' ' || g.last_name as guest_name,
         g.email as guest_email,
         r.check_in_date,
         r.check_out_date,
@@ -22,8 +22,8 @@ async function getReservationsReport(req, res) {
         r.balance_due,
         r.created_at,
         COUNT(DISTINCT rr.id) as room_count,
-        GROUP_CONCAT(DISTINCT rt.name ORDER BY rt.name SEPARATOR ', ') as room_type_names,
-        GROUP_CONCAT(DISTINCT rm.room_number ORDER BY rm.room_number SEPARATOR ', ') as room_numbers
+        STRING_AGG(DISTINCT rt.name, ', ' ORDER BY rt.name) as room_type_names,
+        STRING_AGG(DISTINCT rm.room_number, ', ' ORDER BY rm.room_number) as room_numbers
       FROM reservations r
       LEFT JOIN guests g ON r.guest_id = g.id
       LEFT JOIN reservation_rooms rr ON rr.reservation_id = r.id
@@ -33,19 +33,20 @@ async function getReservationsReport(req, res) {
     `;
 
     const params = [];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND r.created_at >= ?';
+      query += ` AND r.created_at >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND r.created_at < DATE_ADD(?, INTERVAL 1 DAY)';
+      query += ` AND r.created_at < ($${paramCount++}::date + INTERVAL '1 day')`;
       params.push(endDate);
     }
 
     if (status) {
-      query += ' AND r.reservation_status = ?';
+      query += ` AND r.reservation_status = $${paramCount++}`;
       params.push(status);
     }
 
@@ -67,7 +68,8 @@ async function getReservationsReport(req, res) {
       ORDER BY r.created_at DESC
     `;
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
     res.json(rows);
   } catch (error) {
     console.error('Error generating reservations report:', error);
@@ -87,7 +89,7 @@ async function getPaymentsReport(req, res) {
         p.id,
         p.reservation_id,
         r.reservation_code,
-        CONCAT(g.first_name, ' ', g.last_name) as guest_name,
+        g.first_name || ' ' || g.last_name as guest_name,
         g.email as guest_email,
         p.amount,
         p.payment_status,
@@ -103,25 +105,27 @@ async function getPaymentsReport(req, res) {
     `;
 
     const params = [];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND p.created_at >= ?';
+      query += ` AND p.created_at >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND p.created_at < DATE_ADD(?, INTERVAL 1 DAY)';
+      query += ` AND p.created_at < ($${paramCount++}::date + INTERVAL '1 day')`;
       params.push(endDate);
     }
 
     if (status) {
-      query += ' AND p.payment_status = ?';
+      query += ` AND p.payment_status = $${paramCount++}`;
       params.push(status);
     }
 
     query += ' ORDER BY p.created_at DESC';
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
     
     // Calculate totals
     const summary = {
@@ -153,7 +157,7 @@ async function getRevenueReport(req, res) {
 
     let query = `
       SELECT 
-        DATE(p.created_at) as date,
+        DATE(p.created_at)::date as date,
         COUNT(DISTINCT p.reservation_id) as transaction_count,
         SUM(p.amount) as daily_revenue,
         COUNT(CASE WHEN p.payment_status = 'paid' THEN 1 END) as successful_payments,
@@ -163,20 +167,22 @@ async function getRevenueReport(req, res) {
     `;
 
     const params = [];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND p.created_at >= ?';
+      query += ` AND p.created_at >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND p.created_at < DATE_ADD(?, INTERVAL 1 DAY)';
+      query += ` AND p.created_at < ($${paramCount++}::date + INTERVAL '1 day')`;
       params.push(endDate);
     }
 
-    query += ' GROUP BY DATE(p.created_at) ORDER BY date DESC';
+    query += ' GROUP BY DATE(p.created_at)::date ORDER BY date DESC';
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
 
     // Calculate summary
     const summary = {
@@ -207,14 +213,15 @@ async function getOccupancyReport(req, res) {
 
     const params = [];
     let reservationRoomsJoin = 'LEFT JOIN reservation_rooms rr ON rm.id = rr.room_id';
+    let paramCount = 1;
 
     if (startDate) {
-      reservationRoomsJoin += ' AND rr.check_in_date >= ?';
+      reservationRoomsJoin += ` AND rr.check_in_date >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      reservationRoomsJoin += ' AND rr.check_out_date <= ?';
+      reservationRoomsJoin += ` AND rr.check_out_date <= $${paramCount++}`;
       params.push(endDate);
     }
 
@@ -224,7 +231,7 @@ async function getOccupancyReport(req, res) {
         rm.room_name,
         rt.name as room_type_name,
         COUNT(DISTINCT rr.id) as total_reservations,
-        COALESCE(SUM(DATEDIFF(rr.check_out_date, rr.check_in_date)), 0) as total_nights,
+        COALESCE(SUM((rr.check_out_date::date - rr.check_in_date::date)), 0) as total_nights,
         COUNT(DISTINCT CASE WHEN r.reservation_status = 'checked_out' THEN rr.id END) as completed_stays,
         COUNT(DISTINCT CASE WHEN r.reservation_status = 'cancelled' THEN rr.id END) as cancelled_stays
       FROM rooms rm
@@ -243,7 +250,8 @@ async function getOccupancyReport(req, res) {
       ORDER BY rm.room_number ASC
     `;
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
 
     res.json(rows);
   } catch (error) {
@@ -264,7 +272,7 @@ async function getCancellationsReport(req, res) {
         cr.id as cancellation_request_id,
         r.id as reservation_id,
         r.reservation_code,
-        CONCAT(g.first_name, ' ', g.last_name) as guest_name,
+        g.first_name || ' ' || g.last_name as guest_name,
         g.email as guest_email,
         r.check_in_date,
         r.check_out_date,
@@ -287,20 +295,22 @@ async function getCancellationsReport(req, res) {
     `;
 
     const params = [];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND cr.requested_at >= ?';
+      query += ` AND cr.requested_at >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND cr.requested_at < DATE_ADD(?, INTERVAL 1 DAY)';
+      query += ` AND cr.requested_at < ($${paramCount++}::date + INTERVAL '1 day')`;
       params.push(endDate);
     }
 
     query += ' ORDER BY cr.requested_at DESC';
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
 
     // Calculate summary
     const summary = {
@@ -345,30 +355,32 @@ async function getActivityLogsReport(req, res) {
     `;
 
     const params = [];
+    let paramCount = 1;
 
     if (startDate) {
-      query += ' AND al.created_at >= ?';
+      query += ` AND al.created_at >= $${paramCount++}`;
       params.push(startDate);
     }
 
     if (endDate) {
-      query += ' AND al.created_at < DATE_ADD(?, INTERVAL 1 DAY)';
+      query += ` AND al.created_at < ($${paramCount++}::date + INTERVAL '1 day')`;
       params.push(endDate);
     }
 
     if (entityType) {
-      query += ' AND al.entity_type = ?';
+      query += ` AND al.entity_type = $${paramCount++}`;
       params.push(entityType);
     }
 
     if (action) {
-      query += ' AND al.action = ?';
+      query += ` AND al.action = $${paramCount++}`;
       params.push(action);
     }
 
     query += ' ORDER BY al.created_at DESC';
 
-    const [rows] = await pool.query(query, params);
+    const result = await pool.query(query, params);
+    const rows = result.rows;
 
     res.json(rows);
   } catch (error) {

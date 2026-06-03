@@ -12,7 +12,7 @@ const defaultLandingContent = {
 
 async function getPublicLandingContent(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         eyebrow,
@@ -27,6 +27,7 @@ async function getPublicLandingContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0] || defaultLandingContent);
   } catch (error) {
@@ -37,7 +38,7 @@ async function getPublicLandingContent(req, res) {
 
 async function getAdminLandingContent(req, res) {
   try {
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         lc.*,
@@ -48,6 +49,7 @@ async function getAdminLandingContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0] || defaultLandingContent);
   } catch (error) {
@@ -74,9 +76,10 @@ async function saveLandingContent(req, res) {
       });
     }
 
-    const [existingRows] = await pool.query(
+    const existingResult = await pool.query(
       'SELECT id FROM landing_content ORDER BY id ASC LIMIT 1'
     );
+    const existingRows = existingResult.rows;
 
     if (existingRows.length) {
       const existingId = existingRows[0].id;
@@ -85,16 +88,16 @@ async function saveLandingContent(req, res) {
         `
         UPDATE landing_content
         SET
-          eyebrow = ?,
-          title = ?,
-          subtitle = ?,
-          primary_button_label = ?,
-          primary_button_link = ?,
-          secondary_button_label = ?,
-          secondary_button_link = ?,
-          updated_by = ?,
+          eyebrow = $1,
+          title = $2,
+          subtitle = $3,
+          primary_button_label = $4,
+          primary_button_link = $5,
+          secondary_button_label = $6,
+          secondary_button_link = $7,
+          updated_by = $8,
           updated_at = NOW()
-        WHERE id = ?
+        WHERE id = $9
         `,
         [
           eyebrow,
@@ -121,7 +124,7 @@ async function saveLandingContent(req, res) {
           secondary_button_link,
           updated_by
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `,
         [
           eyebrow,
@@ -136,7 +139,7 @@ async function saveLandingContent(req, res) {
       );
     }
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT
         lc.*,
@@ -147,6 +150,7 @@ async function saveLandingContent(req, res) {
       LIMIT 1
       `
     );
+    const rows = result.rows;
 
     res.json(rows[0]);
   } catch (error) {
