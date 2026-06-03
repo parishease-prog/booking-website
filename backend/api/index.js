@@ -52,22 +52,22 @@ try {
   });
   
   // Register real routes
-  app.use(adminAuthRoutes);
-  app.use(catalogRoutes);
-  app.use(availabilityRoutes);
-  app.use(guestRoutes);
-  app.use(reservationRoutes);
-  app.use(paymentRoutes);
-  app.use(requestRoutes);
-  app.use(homepageSlideRoutes);
-  app.use(landingContentRoutes);
-  app.use(amenitiesContentRoutes);
-  app.use(amenitiesCardRoutes);
-  app.use(adminRoomRoutes);
-  app.use(uploadRoutes);
-  app.use(adminOpsRoutes);
-  app.use(reportRoutes);
-  app.use(inquiryRoutes);
+  app.use('/api', adminAuthRoutes);
+  app.use('/api', catalogRoutes);
+  app.use('/api', availabilityRoutes);
+  app.use('/api', guestRoutes);
+  app.use('/api', reservationRoutes);
+  app.use('/api', paymentRoutes);
+  app.use('/api', requestRoutes);
+  app.use('/api', homepageSlideRoutes);
+  app.use('/api', landingContentRoutes);
+  app.use('/api', amenitiesContentRoutes);
+  app.use('/api', amenitiesCardRoutes);
+  app.use('/api', adminRoomRoutes);
+  app.use('/api', uploadRoutes);
+  app.use('/api', adminOpsRoutes);
+  app.use('/api', reportRoutes);
+  app.use('/api', inquiryRoutes);
   
   console.log('[API] Real database routes loaded successfully');
 } catch (err) {
@@ -182,15 +182,15 @@ app.patch('/api/inquiries/:id', (req, res) => {
 });
 
 // Mock admin auth endpoint - adds missing POST route
-app.post('/admin/auth/login', (req, res) => {
-  console.log('[API] POST /admin/auth/login (MOCK) - Real routes failed to load');
+app.post('/api/admin/auth/login', (req, res) => {
+  console.log('[API] POST /api/admin/auth/login (MOCK) - Real routes failed to load');
   res.status(500).json({ 
     message: 'Real database routes failed to load. Check server logs and database connection.',
     error: realRoutesErrorStack ? realRoutesErrorStack.split('\n')[0] : 'Unknown error'
   });
 });
 
-app.get('/admin/auth/me', (req, res) => {
+app.get('/api/admin/auth/me', (req, res) => {
   console.log('[API] GET /admin/auth/me (MOCK)');
   res.status(401).json({ message: 'Unauthorized' });
 });
