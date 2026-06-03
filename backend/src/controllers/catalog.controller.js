@@ -41,7 +41,7 @@ async function getRooms(req, res) {
         ) AS primary_image_alt
       FROM rooms r
       JOIN room_types rt ON rt.id = r.room_type_id
-      WHERE r.is_active = 1
+      WHERE r.is_active = true
       ORDER BY r.room_number ASC
       `
     );
@@ -58,7 +58,7 @@ async function getPromos(req, res) {
       `
       SELECT *
       FROM promos
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY start_date ASC, end_date ASC
       `
     );

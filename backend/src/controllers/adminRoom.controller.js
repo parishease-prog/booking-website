@@ -509,12 +509,12 @@ async function setPrimaryRoomImage(req, res) {
     }
 
     await client.query(
-      'UPDATE room_images SET is_primary = 0 WHERE room_id = $1',
+      'UPDATE room_images SET is_primary = false WHERE room_id = $1',
       [id]
     );
 
     await client.query(
-      'UPDATE room_images SET is_primary = 1 WHERE id = $1',
+      'UPDATE room_images SET is_primary = true WHERE id = $1',
       [imageId]
     );
 

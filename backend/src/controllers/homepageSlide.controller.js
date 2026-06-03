@@ -15,7 +15,7 @@ async function getPublicHomepageSlides(req, res) {
         button_link,
         sort_order
       FROM homepage_slides
-      WHERE is_active = 1
+      WHERE is_active = true
       ORDER BY sort_order ASC, id ASC
       `
     );
