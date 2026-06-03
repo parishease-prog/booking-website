@@ -1,0 +1,10 @@
+{
+  "build": {
+    "builder": "nixpacks",
+    "rootDirectory": "backend"
+  },
+  "deploy": {
+    "startCommand": "node src/server.js",
+    "restartPolicyMaxRetries": 5
+  }
+}
