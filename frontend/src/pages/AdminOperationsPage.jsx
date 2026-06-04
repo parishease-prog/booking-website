@@ -276,6 +276,10 @@ function AdminOperationsPage() {
         </div>
 
         <style>{`
+          .main-grid > .panel {
+            max-width: 700px;
+          }
+
           .dashboard-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
