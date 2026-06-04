@@ -165,8 +165,6 @@ async function createPayment(req, res) {
         reservation_id,
         payment_method,
         payment_channel,
-        provider,
-        provider_event_id,
         amount,
         payment_status,
         reference_number,
@@ -175,15 +173,13 @@ async function createPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id
       `,
       [
         resolvedReservationId,
         payment_method,
         payment_channel || null,
-        provider,
-        provider_event_id,
         numericAmount,
         payment_status,
         reference_number || null,
@@ -280,8 +276,6 @@ async function createAdminPayment(req, res) {
         reservation_id,
         payment_method,
         payment_channel,
-        provider,
-        provider_event_id,
         amount,
         payment_status,
         reference_number,
@@ -290,15 +284,13 @@ async function createAdminPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)
       RETURNING id
       `,
       [
         reservation_id,
         payment_method,
         payment_channel || null,
-        provider || null,
-        provider_event_id || null,
         numericAmount,
         payment_status,
         reference_number || null,
@@ -399,49 +391,37 @@ async function handlePaymentWebhook(req, res) {
 
     const reservationId = reservationResult.rows[0].id;
 
-    const paymentCheckResult = await client.query(
-      'SELECT id FROM payments WHERE provider_event_id = $1 LIMIT 1',
-      [eventId]
-    );
-
     let paymentId = null;
-    if (paymentCheckResult.rows.length) {
-      paymentId = paymentCheckResult.rows[0].id;
-    } else {
-      const paymentResult = await client.query(
-        `
-        INSERT INTO payments (
-          reservation_id,
-          payment_method,
-          payment_channel,
-          provider,
-          provider_event_id,
-          amount,
-          payment_status,
-          reference_number,
-          proof_image_url,
-          paid_at,
-          recorded_by_user_id,
-          notes
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NULL, $10)
-        RETURNING id
-        `,
-        [
-          reservationId,
-          payload.payment_method || 'e_wallet',
-          payload.payment_channel || null,
-          provider,
-          eventId,
-          amount,
-          paymentStatus,
-          payload.reference_number || null,
-          payload.proof_image_url || null,
-          payload.notes || 'Recorded via webhook'
-        ]
-      );
-      paymentId = paymentResult.rows[0].id;
-    }
+    // Webhook events table will handle duplicate detection via UNIQUE constraint on (provider, event_id)
+    const paymentResult = await client.query(
+      `
+      INSERT INTO payments (
+        reservation_id,
+        payment_method,
+        payment_channel,
+        amount,
+        payment_status,
+        reference_number,
+        proof_image_url,
+        paid_at,
+        recorded_by_user_id,
+        notes
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NULL, $8)
+      RETURNING id
+      `,
+      [
+        reservationId,
+        payload.payment_method || 'e_wallet',
+        payload.payment_channel || null,
+        amount,
+        paymentStatus,
+        payload.reference_number || null,
+        payload.proof_image_url || null,
+        payload.notes || 'Recorded via webhook'
+      ]
+    );
+    paymentId = paymentResult.rows[0].id;
 
     await updateReservationPaymentSummary(client, reservationId);
 
@@ -538,7 +518,6 @@ async function refundAdminPayment(req, res) {
         reservation_id,
         payment_method,
         payment_channel,
-        provider,
         amount,
         payment_status,
         reference_number,
@@ -546,14 +525,13 @@ async function refundAdminPayment(req, res) {
         recorded_by_user_id,
         notes
       )
-      VALUES ($1, $2, $3, $4, $5, 'refunded', $6, NOW(), $7, $8)
+      VALUES ($1, $2, $3, $4, 'refunded', $5, NOW(), $6, $7)
       RETURNING id
       `,
       [
         payment.reservation_id,
         payment.payment_method,
         payment.payment_channel,
-        payment.provider || 'manual_refund',
         refundAmount,
         `RFND-${payment.id}-${Date.now()}`,
         req.user?.id || null,
