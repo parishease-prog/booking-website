@@ -286,11 +286,11 @@ function AdminOperationsPage() {
           .kpi-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 1.5rem;
+            padding: 0.75rem;
             border-radius: 10px;
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.75rem;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s, box-shadow 0.2s;
           }
@@ -313,8 +313,8 @@ function AdminOperationsPage() {
           }
 
           .kpi-icon {
-            font-size: 2.5rem;
-            min-width: 60px;
+            font-size: 1.8rem;
+            min-width: 40px;
             text-align: center;
           }
 
@@ -324,7 +324,7 @@ function AdminOperationsPage() {
 
           .kpi-label {
             margin: 0;
-            font-size: 0.85rem;
+            font-size: 0.7rem;
             opacity: 0.9;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -332,14 +332,14 @@ function AdminOperationsPage() {
           }
 
           .kpi-value {
-            margin: 0.5rem 0 0.25rem 0;
-            font-size: 1.75rem;
+            margin: 0.25rem 0 0 0;
+            font-size: 1.25rem;
             font-weight: 700;
           }
 
           .kpi-subtext {
             margin: 0;
-            font-size: 0.8rem;
+            font-size: 0.65rem;
             opacity: 0.8;
           }
 
