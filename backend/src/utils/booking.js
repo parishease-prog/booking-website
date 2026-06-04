@@ -74,20 +74,37 @@ async function getAvailableRoomsQuery(connection, options = {}) {
   } = options;
 
   const ids = normalizeRoomIds(roomIds);
+  let paramIndex = 1;
   const params = [];
   const conditions = [
-    'r.is_active = 1',
+    'r.is_active = true',
     "r.status = 'available'"
   ];
 
   if (ids.length > 0) {
-    conditions.push(`r.id IN (${ids.map(() => '?').join(',')})`);
+    const idPlaceholders = ids.map(() => `$${paramIndex++}`).join(',');
+    conditions.push(`r.id IN (${idPlaceholders})`);
     params.push(...ids);
   }
 
   if (roomTypeId) {
-    conditions.push('r.room_type_id = ?');
+    conditions.push(`r.room_type_id = $${paramIndex++}`);
     params.push(Number(roomTypeId));
+  }
+
+  // Add date parameters to params array (they will be $N where N starts after previous params)
+  const checkOutDateParam = `$${paramIndex++}`;
+  const checkInDateParam = `$${paramIndex++}`;
+  const blockCheckOutParam = `$${paramIndex++}`;
+  const blockCheckInParam = `$${paramIndex++}`;
+  const resortCheckOutParam = `$${paramIndex++}`;
+  const resortCheckInParam = `$${paramIndex++}`;
+  const holdCheckOutParam = `$${paramIndex++}`;
+  const holdCheckInParam = `$${paramIndex++}`;
+  let holdTokenParam = '';
+
+  if (ignoreHoldToken) {
+    holdTokenParam = `AND rh.hold_token <> $${paramIndex++}`;
   }
 
   const query = `
@@ -105,16 +122,16 @@ async function getAvailableRoomsQuery(connection, options = {}) {
         FROM reservation_rooms rr
         JOIN reservations res ON rr.reservation_id = res.id
         WHERE res.reservation_status IN ('pending', 'confirmed', 'checked_in', 'overstayed')
-          AND rr.check_in_date < ?
-          AND rr.check_out_date > ?
+          AND rr.check_in_date < ${checkOutDateParam}
+          AND rr.check_out_date > ${checkInDateParam}
       )
       AND r.id NOT IN (
         SELECT ab.room_id
         FROM availability_blocks ab
         WHERE ab.block_scope = 'room'
           AND ab.status = 'active'
-          AND ab.start_date < ?
-          AND ab.end_date > ?
+          AND ab.start_date < ${blockCheckOutParam}
+          AND ab.end_date > ${blockCheckInParam}
           AND ab.room_id IS NOT NULL
       )
       AND NOT EXISTS (
@@ -122,8 +139,8 @@ async function getAvailableRoomsQuery(connection, options = {}) {
         FROM availability_blocks ab2
         WHERE ab2.block_scope = 'whole_resort'
           AND ab2.status = 'active'
-          AND ab2.start_date < ?
-          AND ab2.end_date > ?
+          AND ab2.start_date < ${resortCheckOutParam}
+          AND ab2.end_date > ${resortCheckInParam}
       )
       AND r.id NOT IN (
         SELECT hrr.room_id
@@ -131,9 +148,9 @@ async function getAvailableRoomsQuery(connection, options = {}) {
         JOIN reservation_holds rh ON rh.id = hrr.hold_id
         WHERE rh.status = 'active'
           AND rh.expires_at > NOW()
-          AND rh.check_in_date < ?
-          AND rh.check_out_date > ?
-          ${ignoreHoldToken ? 'AND rh.hold_token <> ?' : ''}
+          AND rh.check_in_date < ${holdCheckOutParam}
+          AND rh.check_out_date > ${holdCheckInParam}
+          ${holdTokenParam}
       )
     ORDER BY r.room_number ASC
   `;
@@ -153,7 +170,8 @@ async function getAvailableRoomsQuery(connection, options = {}) {
     params.push(ignoreHoldToken);
   }
 
-  return connection.query(query, params);
+  const result = await connection.query(query, params);
+  return result.rows;
 }
 
 async function expireStaleHolds(connection) {
@@ -167,8 +185,7 @@ async function expireStaleHolds(connection) {
 }
 
 async function fetchReservationDetails(connection, whereClause, params) {
-  const [reservations] = await connection.query(
-    `
+  const query = `
     SELECT
       r.*,
       CONCAT(g.first_name, ' ', g.last_name) AS guest_name,
@@ -178,9 +195,10 @@ async function fetchReservationDetails(connection, whereClause, params) {
     JOIN guests g ON g.id = r.guest_id
     WHERE ${whereClause}
     LIMIT 1
-    `,
-    params
-  );
+  `;
+
+  const result = await connection.query(query, params);
+  const reservations = result.rows;
 
   if (reservations.length === 0) {
     return null;
@@ -188,7 +206,7 @@ async function fetchReservationDetails(connection, whereClause, params) {
 
   const reservation = reservations[0];
 
-  const [rooms] = await connection.query(
+  const roomsResult = await connection.query(
     `
     SELECT
       rr.*,
@@ -198,21 +216,23 @@ async function fetchReservationDetails(connection, whereClause, params) {
     FROM reservation_rooms rr
     JOIN rooms rm ON rm.id = rr.room_id
     JOIN room_types rt ON rt.id = rm.room_type_id
-    WHERE rr.reservation_id = ?
+    WHERE rr.reservation_id = $1
     ORDER BY rm.room_number ASC
     `,
     [reservation.id]
   );
+  const rooms = roomsResult.rows;
 
-  const [payments] = await connection.query(
+  const paymentsResult = await connection.query(
     `
     SELECT *
     FROM payments
-    WHERE reservation_id = ?
+    WHERE reservation_id = $1
     ORDER BY created_at DESC
     `,
     [reservation.id]
   );
+  const payments = paymentsResult.rows;
 
   return {
     ...reservation,
@@ -222,7 +242,7 @@ async function fetchReservationDetails(connection, whereClause, params) {
 }
 
 async function updateReservationPaymentSummary(connection, reservationId) {
-  const [paymentTotals] = await connection.query(
+  const paymentTotalsResult = await connection.query(
     `
     SELECT COALESCE(SUM(
       CASE
@@ -232,17 +252,20 @@ async function updateReservationPaymentSummary(connection, reservationId) {
       END
     ), 0) AS amount_paid
     FROM payments
-    WHERE reservation_id = ?
+    WHERE reservation_id = $1
     `,
     [reservationId]
   );
 
+  const paymentTotals = paymentTotalsResult.rows;
   const amountPaid = Number(paymentTotals[0].amount_paid || 0);
 
-  const [reservationRows] = await connection.query(
-    'SELECT total_amount, reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = ? LIMIT 1',
+  const reservationResult = await connection.query(
+    'SELECT total_amount, reservation_status, reservation_code, confirmation_code FROM reservations WHERE id = $1 LIMIT 1',
     [reservationId]
   );
+
+  const reservationRows = reservationResult.rows;
 
   if (reservationRows.length === 0) {
     return;
@@ -276,13 +299,13 @@ async function updateReservationPaymentSummary(connection, reservationId) {
     `
     UPDATE reservations
     SET
-      amount_paid = ?,
-      balance_due = ?,
-      payment_status = ?,
-      reservation_status = ?,
-      confirmation_code = COALESCE(confirmation_code, ?),
+      amount_paid = $1,
+      balance_due = $2,
+      payment_status = $3,
+      reservation_status = $4,
+      confirmation_code = COALESCE(confirmation_code, $5),
       updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
+    WHERE id = $6
     `,
     [amountPaid, balanceDue, paymentStatus, nextReservationStatus, confirmationCode, reservationId]
   );
