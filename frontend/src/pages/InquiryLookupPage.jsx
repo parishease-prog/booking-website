@@ -16,14 +16,12 @@ function formatDateTime(value) {
 
 function getStatusBadgeClass(status) {
   switch (status) {
-    case 'new':
-      return 'badge-new';
-    case 'read':
-      return 'badge-read';
+    case 'pending':
+      return 'badge-pending';
     case 'responded':
       return 'badge-responded';
-    case 'archived':
-      return 'badge-archived';
+    case 'closed':
+      return 'badge-closed';
     default:
       return '';
   }
@@ -31,10 +29,9 @@ function getStatusBadgeClass(status) {
 
 function getStatusLabel(status) {
   const labels = {
-    new: 'New',
-    read: 'Read',
+    pending: 'Pending',
     responded: 'Responded',
-    archived: 'Archived'
+    closed: 'Closed'
   };
   return labels[status] || status;
 }
@@ -166,7 +163,7 @@ function InquiryLookupPage() {
               <h3>Your Inquiry</h3>
               <div className="detail-box">
                 <p className="detail-label">Name</p>
-                <p>{selectedInquiry.name}</p>
+                <p>{selectedInquiry.full_name}</p>
                 <p className="detail-label">Email</p>
                 <p>{selectedInquiry.email}</p>
                 {selectedInquiry.phone && (
@@ -180,14 +177,14 @@ function InquiryLookupPage() {
               </div>
             </div>
 
-            {selectedInquiry.status === 'responded' && selectedInquiry.response_notes && (
+            {selectedInquiry.status === 'responded' && selectedInquiry.review_notes && (
               <div className="detail-section response-section">
                 <h3>Our Response</h3>
                 <div className="detail-box response-box">
                   <p className="response-date">
-                    Responded on {formatDateTime(selectedInquiry.responded_at)}
+                    Responded on {formatDateTime(selectedInquiry.reviewed_at)}
                   </p>
-                  <p className="response-text">{selectedInquiry.response_notes}</p>
+                  <p className="response-text">{selectedInquiry.review_notes}</p>
                 </div>
               </div>
             )}
