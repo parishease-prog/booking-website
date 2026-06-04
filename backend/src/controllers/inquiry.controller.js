@@ -168,7 +168,6 @@ async function updateInquiry(req, res) {
     }
 
     setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
-    params.push(id);
 
     const setClause = setClauses.join(', ');
     params.push(id);
