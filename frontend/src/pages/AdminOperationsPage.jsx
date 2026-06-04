@@ -73,6 +73,19 @@ function AdminOperationsPage() {
     return baseClass + 'badge-default';
   };
 
+  async function confirmReservation(id) {
+    try {
+      setConfirmingId(id);
+      await apiPost('/admin/reservations/confirm', { reservation_id: id }, { token });
+      setMessage({ type: 'success', text: 'Reservation confirmed!' });
+      loadOperations();
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
   return (
     <main className="main-grid">
       <section className="panel">
@@ -115,7 +128,7 @@ function AdminOperationsPage() {
                 <div className="kpi-content">
                   <p className="kpi-label">Total Revenue</p>
                   <p className="kpi-value">{formatPeso(
-                    overview.reservations.reduce((sum, r) => sum + (r.total_amount || 0), 0)
+                    overview.reservations.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0)
                   )}</p>
                   <p className="kpi-subtext">expected</p>
                 </div>
