@@ -179,15 +179,19 @@ function InquiryLookupPage() {
 
             {selectedInquiry.status === 'responded' && (
               <div className="detail-section response-section">
-                <h3>Our Response</h3>
-                <div className="detail-box response-box">
+                <h3 style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid #ddd' }}>
+                  Our Response
+                </h3>
+                <div className="detail-box response-box" style={{ backgroundColor: '#f0f9f7', borderLeft: '4px solid #1a7f6f' }}>
                   {selectedInquiry.reviewed_at && (
-                    <p className="response-date">
+                    <p className="response-date" style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
                       Responded on {formatDateTime(selectedInquiry.reviewed_at)}
                     </p>
                   )}
                   {selectedInquiry.review_notes ? (
-                    <p className="response-text">{selectedInquiry.review_notes}</p>
+                    <p className="response-text" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                      {selectedInquiry.review_notes}
+                    </p>
                   ) : (
                     <p className="response-text" style={{ fontStyle: 'italic', color: '#999' }}>
                       We have reviewed your inquiry and will be in touch soon.
