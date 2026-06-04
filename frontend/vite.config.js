@@ -7,7 +7,8 @@ const ALLOWED_PROXY_HOSTS = [
   'http://localhost:5001',
   'http://localhost:8000',
   'https://api.example.com', // Update with your actual production domain
-  'https://api.brewspot.com'
+  'https://api.brewspot.com',
+  'https://booking-website-production-1083.up.railway.app'
 ];
 
 function resolveProxyTarget(rawTarget) {

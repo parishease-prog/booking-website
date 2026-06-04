@@ -1,0 +1,30 @@
+# Hostinger FTP Upload Script
+
+**Before running, you need:**
+1. FTP username from Hostinger
+2. FTP password from Hostinger  
+3. FTP host (usually: ftp.yourdomain.com or your.ip.address)
+
+**To get these credentials:**
+- Go to https://hpanel.hostinger.com
+- Click Websites → Tools → FTP Accounts
+- Create or view existing FTP account details
+
+**Once you have credentials, use FileZilla:**
+
+1. Download FileZilla (free): https://filezilla-project.org/download.php?type=client
+2. Install it
+3. Enter FTP credentials in FileZilla:
+   - Host: [Your FTP host]
+   - Username: [Your FTP username]
+   - Password: [Your FTP password]
+   - Port: 21
+4. Click "Connect"
+5. Navigate to `public_html` folder on the server
+6. Drag and drop files from `c:\xampp\htdocs\booking-app-standalone\frontend\dist` to `public_html`
+
+**Alternatively, I can create a PowerShell script** if you provide the FTP credentials.
+
+Which do you prefer?
+- Option A: Use FileZilla (manual, safest)
+- Option B: Give me FTP credentials and I'll create automated script

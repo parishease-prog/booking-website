@@ -21,7 +21,7 @@ async function logActivity(connection, options = {}) {
         action,
         description
       )
-      VALUES (?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5)
       `,
       [userId, entityType, entityId, action, description]
     );

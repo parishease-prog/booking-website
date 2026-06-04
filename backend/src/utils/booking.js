@@ -147,7 +147,7 @@ async function getAvailableRoomsQuery(connection, options = {}) {
         FROM reservation_hold_rooms hrr
         JOIN reservation_holds rh ON rh.id = hrr.hold_id
         WHERE rh.status = 'active'
-          AND rh.expires_at > NOW()
+          AND rh.expires_at > (NOW() AT TIME ZONE 'UTC')
           AND rh.check_in_date < ${holdCheckOutParam}
           AND rh.check_out_date > ${holdCheckInParam}
           ${holdTokenParam}
@@ -179,7 +179,7 @@ async function expireStaleHolds(connection) {
     `
     UPDATE reservation_holds
     SET status = 'expired', updated_at = CURRENT_TIMESTAMP
-    WHERE status = 'active' AND expires_at <= NOW()
+    WHERE status = 'active' AND expires_at <= (NOW() AT TIME ZONE 'UTC')
     `
   );
 }

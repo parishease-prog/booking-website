@@ -175,7 +175,7 @@ async function createReservation(req, res) {
 
       const hold = holdRows[0];
 
-      if (hold.status !== 'active' || new Date(hold.expires_at) <= new Date()) {
+      if (hold.status !== 'active' || hold.expires_at <= new Date()) {
         await client.query(
           `
           UPDATE reservation_holds
@@ -238,7 +238,7 @@ async function createReservation(req, res) {
       normalizedRoomIds
     );
 
-    const [availableRooms] = await getAvailableRoomsQuery(client, {
+    const availableRooms = await getAvailableRoomsQuery(client, {
       checkInDate: check_in_date,
       checkOutDate: check_out_date,
       roomIds: normalizedRoomIds,
@@ -502,7 +502,7 @@ async function createReservationHold(req, res) {
         expires_at,
         status
       )
-      VALUES ($1, $2, $3, $4, NOW() + INTERVAL '${BOOKING_HOLD_MINUTES} minutes', 'active')
+      VALUES ($1, $2, $3, $4, (NOW() AT TIME ZONE 'UTC') + INTERVAL '${BOOKING_HOLD_MINUTES} minutes', 'active')
       RETURNING id
       `,
       [holdToken, guest_email || null, check_in_date, check_out_date]
