@@ -769,7 +769,7 @@ async function getMyBookingReceipt(req, res) {
 
     const reservation = await fetchReservationDetails(
       pool,
-      'r.reservation_code = ? AND g.email = ?',
+      'r.reservation_code = $1 AND g.email = $2',
       [code, email]
     );
 
@@ -1043,7 +1043,7 @@ async function getMyBookingReceiptPost(req, res) {
 
     const reservation = await fetchReservationDetails(
       pool,
-      'r.reservation_code = ? AND g.email = ?',
+      'r.reservation_code = $1 AND g.email = $2',
       [code, trimmedEmail]
     );
 

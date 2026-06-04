@@ -226,18 +226,18 @@ async function getInquiriesByEmail(req, res) {
       return res.status(400).json({ message: 'Invalid email format' });
     }
 
-    const [rows] = await pool.query(
+    const result = await pool.query(
       `
       SELECT id, name, email, phone, subject, message, status, responded_at, response_notes, created_at
       FROM inquiries
-      WHERE email = ?
+      WHERE email = $1
       ORDER BY created_at DESC
       `,
       [email]
     );
 
-    console.log(`[DEBUG] getInquiriesByEmail for ${email}: found ${rows.length} inquiries`);
-    res.json(rows);
+    console.log(`[DEBUG] getInquiriesByEmail for ${email}: found ${result.rows.length} inquiries`);
+    res.json(result.rows);
   } catch (error) {
     console.error('[ERROR] getInquiriesByEmail:', error);
     res.status(500).json({ message: 'Failed to fetch inquiries' });
