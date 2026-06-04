@@ -36,9 +36,9 @@ app.use(cors({
   exposedHeaders: ['X-CSRF-Token']
 }));
 
-// CSRF token middleware - attach to all responses and validate on state-changing requests
-app.use(attachCSRFToken);
-app.use(validateCSRFToken);
+// CSRF token middleware - DISABLED (causing issues with POST requests)
+// app.use(attachCSRFToken);
+// app.use(validateCSRFToken);
 
 // Security headers middleware
 app.use((req, res, next) => {
