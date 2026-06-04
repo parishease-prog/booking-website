@@ -128,7 +128,10 @@ function AdminOperationsPage() {
                 <div className="kpi-content">
                   <p className="kpi-label">Total Revenue</p>
                   <p className="kpi-value">{formatPeso(
-                    overview.reservations.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0)
+                    (overview.reservations || []).reduce((sum, r) => {
+                      const amount = parseFloat(r.total_amount);
+                      return sum + (isNaN(amount) ? 0 : amount);
+                    }, 0)
                   )}</p>
                   <p className="kpi-subtext">expected</p>
                 </div>
