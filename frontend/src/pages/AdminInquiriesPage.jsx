@@ -6,10 +6,9 @@ import { getAdminToken } from '../utils/adminSession.js';
 import { maskEmail } from '../utils/validation.js';
 
 const statusOptions = [
-  { value: 'new', label: 'New' },
-  { value: 'read', label: 'Read' },
+  { value: 'pending', label: 'Pending' },
   { value: 'responded', label: 'Responded' },
-  { value: 'archived', label: 'Archived' }
+  { value: 'closed', label: 'Closed' }
 ];
 
 function formatDateTime(value) {
@@ -71,7 +70,7 @@ function AdminInquiriesPage() {
       setSelectedInquiry(null);
       const detail = await apiGet(`/inquiries/${inquiry.id}`, { token });
       setSelectedInquiry(detail);
-      setResponseNotes(detail.response_notes || '');
+      setResponseNotes(detail.review_notes || '');
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     }
@@ -93,7 +92,7 @@ function AdminInquiriesPage() {
       if (newStatus === 'responded') {
         const detail = await apiGet(`/inquiries/${selectedInquiry.id}`, { token });
         setSelectedInquiry(detail);
-        setResponseNotes(detail.response_notes || '');
+        setResponseNotes(detail.review_notes || '');
       } else {
         setSelectedInquiry(null);
       }
@@ -118,6 +117,7 @@ function AdminInquiriesPage() {
       await loadInquiries();
       const detail = await apiGet(`/inquiries/${selectedInquiry.id}`, { token });
       setSelectedInquiry(detail);
+      setResponseNotes(detail.review_notes || '');
     } catch (error) {
       setMessage({ type: 'error', text: error.message });
     } finally {

@@ -31,10 +31,32 @@ const app = express();
 const frontendDir = path.resolve(__dirname, '../../frontend');
 const uploadsDir = path.resolve(__dirname, '../uploads');
 
-// Configure CORS to expose CSRF token header
-app.use(cors({
-  exposedHeaders: ['X-CSRF-Token']
-}));
+// Configure CORS to allow cross-origin requests with credentials
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'https://mediumbluedotterl.986479.hostingersites.com',
+      'https://booking-website-production-1083.up.railway.app'
+    ];
+    
+    // Allow requests without origin (like mobile apps or curl requests)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  exposedHeaders: ['X-CSRF-Token', 'Authorization'],
+  maxAge: 86400
+};
+
+app.use(cors(corsOptions));
 
 // CSRF token middleware - DISABLED (causing issues with POST requests)
 // app.use(attachCSRFToken);
