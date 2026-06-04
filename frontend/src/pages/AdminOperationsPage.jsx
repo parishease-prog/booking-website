@@ -411,6 +411,37 @@ function AdminOperationsPage() {
             white-space: nowrap;
           }
 
+          .sidebar {
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+            max-height: calc(100vh - 40px);
+          }
+
+          .sidebar .room-list {
+            max-height: calc(100vh - 280px);
+            overflow-y: auto;
+            padding-right: 0.5rem;
+          }
+
+          .sidebar .room-list::-webkit-scrollbar {
+            width: 6px;
+          }
+
+          .sidebar .room-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+          }
+
+          .sidebar .room-list::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+          }
+
+          .sidebar .room-list::-webkit-scrollbar-thumb:hover {
+            background: #555;
+          }
+
           @media (max-width: 768px) {
             .dashboard-grid {
               grid-template-columns: 1fr;
@@ -436,6 +467,16 @@ function AdminOperationsPage() {
 
             .kpi-value {
               font-size: 1.3rem;
+            }
+
+            .sidebar {
+              position: static;
+              max-height: none;
+            }
+
+            .sidebar .room-list {
+              max-height: none;
+              overflow-y: visible;
             }
           }
         `}</style>
