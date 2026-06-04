@@ -177,14 +177,22 @@ function InquiryLookupPage() {
               </div>
             </div>
 
-            {selectedInquiry.status === 'responded' && selectedInquiry.review_notes && (
+            {selectedInquiry.status === 'responded' && (
               <div className="detail-section response-section">
                 <h3>Our Response</h3>
                 <div className="detail-box response-box">
-                  <p className="response-date">
-                    Responded on {formatDateTime(selectedInquiry.reviewed_at)}
-                  </p>
-                  <p className="response-text">{selectedInquiry.review_notes}</p>
+                  {selectedInquiry.reviewed_at && (
+                    <p className="response-date">
+                      Responded on {formatDateTime(selectedInquiry.reviewed_at)}
+                    </p>
+                  )}
+                  {selectedInquiry.review_notes ? (
+                    <p className="response-text">{selectedInquiry.review_notes}</p>
+                  ) : (
+                    <p className="response-text" style={{ fontStyle: 'italic', color: '#999' }}>
+                      We have reviewed your inquiry and will be in touch soon.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
