@@ -17,7 +17,7 @@ async function getInquiries(req, res) {
 
     const result = await pool.query(
       `
-      SELECT id, name, email, phone, subject, message, status, responded_at, response_notes, created_at
+      SELECT id, full_name, email, phone, subject, message, status, reviewed_at, review_notes, created_at
       FROM inquiries
       ${whereClause}
       ORDER BY created_at DESC
@@ -54,9 +54,9 @@ async function getInquiry(req, res) {
       return res.status(404).json({ message: 'Inquiry not found' });
     }
 
-    // Mark as read if it was new
-    if (rows[0].status === 'new') {
-      await pool.query('UPDATE inquiries SET status = $1 WHERE id = $2', ['read', id]);
+    // Mark as responded if it was pending
+    if (rows[0].status === 'pending') {
+      await pool.query('UPDATE inquiries SET status = $1 WHERE id = $2', ['responded', id]);
     }
 
     res.json(rows[0]);
@@ -106,7 +106,7 @@ async function createInquiry(req, res) {
 
     const result = await pool.query(
       `
-      INSERT INTO inquiries (name, email, phone, subject, message)
+      INSERT INTO inquiries (full_name, email, phone, subject, message)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id
       `,
@@ -159,12 +159,12 @@ async function updateInquiry(req, res) {
     }
 
     if (response_notes !== undefined) {
-      setClauses.push(`response_notes = $${paramCounter++}`);
+      setClauses.push(`review_notes = $${paramCounter++}`);
       params.push(response_notes || null);
     }
 
     if (status === 'responded') {
-      setClauses.push(`responded_at = NOW()`);
+      setClauses.push(`reviewed_at = NOW()`);
     }
 
     setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
@@ -228,7 +228,7 @@ async function getInquiriesByEmail(req, res) {
 
     const result = await pool.query(
       `
-      SELECT id, name, email, phone, subject, message, status, responded_at, response_notes, created_at
+      SELECT id, full_name, email, phone, subject, message, status, reviewed_at, review_notes, created_at
       FROM inquiries
       WHERE email = $1
       ORDER BY created_at DESC
