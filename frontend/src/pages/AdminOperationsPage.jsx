@@ -278,26 +278,27 @@ function AdminOperationsPage() {
         <style>{`
           .dashboard-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
             margin-bottom: 2rem;
           }
 
           .kpi-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 0.75rem;
-            border-radius: 10px;
+            padding: 0.5rem;
+            border-radius: 8px;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 0.75rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            gap: 0.25rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s, box-shadow 0.2s;
           }
 
           .kpi-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
           }
 
           .kpi-card:nth-child(2) {
@@ -313,33 +314,33 @@ function AdminOperationsPage() {
           }
 
           .kpi-icon {
-            font-size: 1.8rem;
-            min-width: 40px;
+            font-size: 1.5rem;
             text-align: center;
           }
 
           .kpi-content {
             flex: 1;
+            text-align: center;
           }
 
           .kpi-label {
             margin: 0;
-            font-size: 0.7rem;
+            font-size: 0.6rem;
             opacity: 0.9;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
             font-weight: 600;
           }
 
           .kpi-value {
-            margin: 0.25rem 0 0 0;
-            font-size: 1.25rem;
+            margin: 0.15rem 0 0 0;
+            font-size: 1rem;
             font-weight: 700;
           }
 
           .kpi-subtext {
             margin: 0;
-            font-size: 0.65rem;
+            font-size: 0.55rem;
             opacity: 0.8;
           }
 
