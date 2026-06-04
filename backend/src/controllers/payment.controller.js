@@ -223,8 +223,6 @@ async function createAdminPayment(req, res) {
       reservation_id,
       payment_method,
       payment_channel,
-      provider,
-      provider_event_id,
       amount,
       payment_status = 'paid',
       reference_number,
@@ -244,21 +242,6 @@ async function createAdminPayment(req, res) {
     }
 
     await client.query('BEGIN');
-
-    if (provider_event_id) {
-      const existingResult = await client.query(
-        'SELECT id FROM payments WHERE provider_event_id = $1 LIMIT 1',
-        [provider_event_id]
-      );
-
-      if (existingResult.rows.length) {
-        await client.query('ROLLBACK');
-        return res.status(200).json({
-          message: 'Payment event already recorded',
-          payment_id: existingResult.rows[0].id
-        });
-      }
-    }
 
     const reservationResult = await client.query(
       'SELECT id FROM reservations WHERE id = $1 LIMIT 1',

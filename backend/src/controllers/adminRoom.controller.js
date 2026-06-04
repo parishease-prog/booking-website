@@ -243,8 +243,8 @@ async function createRoom(req, res) {
       max_guests_override,
       price_override,
       status = 'available',
-      is_featured = 0,
-      is_active = 1
+      is_featured = false,
+      is_active = true
     } = req.body;
 
     if (!room_type_id || !room_number || !room_name) {
@@ -277,8 +277,8 @@ async function createRoom(req, res) {
         max_guests_override === undefined || max_guests_override === null || max_guests_override === '' ? null : Number(max_guests_override),
         price_override === undefined || price_override === null || price_override === '' ? null : Number(price_override),
         status,
-        is_featured ? 1 : 0,
-        is_active ? 1 : 0
+        is_featured ? true : false,
+        is_active ? true : false
       ]
     );
 
@@ -434,7 +434,7 @@ async function addRoomImage(req, res) {
 
     if (is_primary) {
       await client.query(
-        'UPDATE room_images SET is_primary = 0 WHERE room_id = $1',
+        'UPDATE room_images SET is_primary = false WHERE room_id = $1',
         [id]
       );
     }
@@ -450,7 +450,7 @@ async function addRoomImage(req, res) {
         String(image_url),
         alt_text || null,
         Number(sort_order || 1),
-        is_primary ? 1 : 0
+        is_primary ? true : false
       ]
     );
 
